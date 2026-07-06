@@ -258,24 +258,9 @@ const TRUSTED_COMPANIES = [
   "Tata Group", "Reliance Retail", "HDFC Bank", "Amazon", "Flipkart", "Infosys",
   "Zomato", "Swiggy", "ICICI Bank", "Byju's", "BigBasket", "Larsen & Toubro",
 ];
-const seedJobs = [
-  { id: "j1", title: "Store Associate", company: "Reliance Retail", category: "Retail & Store Ops", location: "Pune, MH", type: "Full-time", exp: "0–2 yrs", salMin: 16000, salMax: 21000, salUnit: "month", tags: ["Walk-in interview", "No degree required"], desc: ["Assist customers on the floor and at billing", "Maintain stock and store displays", "6-day work week, rotational shifts"] },
-  { id: "j2", title: "Delivery Executive", company: "Swiggy", category: "Delivery & Logistics", location: "Bengaluru, KA", type: "Full-time", exp: "0–1 yrs", salMin: 18000, salMax: 28000, salUnit: "month", tags: ["Own vehicle preferred", "Daily payouts"], desc: ["Pick up and deliver orders within assigned zone", "Use the partner app for navigation and updates", "Incentives on top of fixed pay"] },
-  { id: "j3", title: "Customer Support Executive – Voice", company: "Amazon", category: "Customer Support", location: "Hyderabad, TS", type: "Full-time", exp: "0–2 yrs", salMin: 19000, salMax: 26000, salUnit: "month", tags: ["Night shift allowance", "Freshers welcome"], desc: ["Handle inbound customer queries over voice", "Resolve order, delivery and refund issues", "Rotational shifts including night shift"] },
-  { id: "j4", title: "Backend Engineer – Node.js", company: "Flipkart", category: "IT & Software", location: "Bengaluru, KA (Hybrid)", type: "Full-time", exp: "2–5 yrs", salMin: 1400000, salMax: 2200000, salUnit: "annum", tags: ["Node.js", "AWS", "Microservices"], desc: ["Build and scale checkout and catalog services", "Own service reliability and on-call rotation", "Work in a squad with full ownership"] },
-  { id: "j5", title: "Field Sales Officer", company: "HDFC Bank", category: "Sales & Marketing", location: "Ahmedabad, GJ", type: "Full-time", exp: "1–3 yrs", salMin: 20000, salMax: 32000, salUnit: "month", tags: ["Two-wheeler required", "Incentives"], desc: ["Acquire new savings & current account customers", "Meet monthly sourcing targets in assigned territory", "Attractive incentive structure on top of fixed"] },
-  { id: "j6", title: "Telecaller – Collections", company: "ICICI Bank", category: "BPO / Telecalling", location: "Noida, UP", type: "Full-time", exp: "0–2 yrs", salMin: 17000, salMax: 23000, salUnit: "month", tags: ["Day shift", "Female candidates encouraged"], desc: ["Call customers regarding due payments", "Update call disposition in CRM", "Target-based incentive on collections"] },
-  { id: "j7", title: "Warehouse Picker/Packer", company: "BigBasket", category: "Manufacturing & Warehouse", location: "Chennai, TN", type: "Full-time", exp: "0–1 yrs", salMin: 15500, salMax: 19000, salUnit: "month", tags: ["Immediate joining", "PF & ESI"], desc: ["Pick, pack and sort grocery orders in the warehouse", "Maintain accuracy and speed targets", "Rotational shifts, transport provided"] },
-  { id: "j8", title: "Front Office Executive", company: "Taj Hotels", category: "Hospitality", location: "Goa", type: "Full-time", exp: "1–3 yrs", salMin: 21000, salMax: 30000, salUnit: "month", tags: ["Accommodation available"], desc: ["Manage guest check-in/check-out", "Handle guest requests and escalations", "Coordinate with housekeeping and F&B teams"] },
-  { id: "j9", title: "React Frontend Developer", company: "Infosys", category: "IT & Software", location: "Pune, MH (Remote)", type: "Full-time", exp: "3–6 yrs", salMin: 1600000, salMax: 2600000, salUnit: "annum", tags: ["React", "TypeScript", "Remote"], desc: ["Build client-facing dashboards used by enterprise customers", "Collaborate with design and backend teams", "Fully remote, quarterly on-site meetups"] },
-  { id: "j10", title: "Back Office Data Executive", company: "Tata Group", category: "Admin & Back Office", location: "Kolkata, WB", type: "Full-time", exp: "0–2 yrs", salMin: 16500, salMax: 20000, salUnit: "month", tags: ["Typing test required"], desc: ["Data entry and document verification", "Maintain MIS reports in Excel", "Day shift, Mon–Sat"] },
-  { id: "j11", title: "Loan Processing Associate", company: "L&T Finance", category: "Banking & Finance Ops", location: "Mumbai, MH", type: "Full-time", exp: "1–2 yrs", salMin: 22000, salMax: 29000, salUnit: "month", tags: ["Excel skills"], desc: ["Process and verify loan applications", "Coordinate with credit and legal teams", "Ensure TAT compliance on file movement"] },
-  { id: "j12", title: "Beauty Advisor", company: "Nykaa", category: "Retail & Store Ops", location: "Delhi NCR", type: "Part-time", exp: "0–2 yrs", salMin: 14000, salMax: 19000, salUnit: "month", tags: ["Flexible hours"], desc: ["Assist customers with product selection", "Achieve store sales targets", "Product training provided"] },
-];
-
 function seedDB() {
   return {
-    jobs: seedJobs.map((j) => ({ ...j, active: true, postedAt: Date.now() - Math.random() * 5 * 86400000 })),
+    jobs: [],
     applications: [],
   };
 }
