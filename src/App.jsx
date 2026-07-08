@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { supabase } from "./supabaseClient";
 
 /* ════════════════════════════════════════════════════════════════════════
    JobPulse — internal jobs POC (placeholder brand, not affiliated with any
@@ -226,8 +227,7 @@ async function sendServerConversion(payload) {
 // frontend code. WhatsApp requires business-initiated messages outside an
 // active 24-hour customer conversation to use pre-approved message
 // templates — that's why this takes a template_id + params rather than
-// arbitrary freeform text. See setup-guide.md for template approval steps.
-async function sendWhatsApp({ phone, templateId, params }) {
+// arbitrary freeform text. See setup-guide.md for template approval steps.async function sendWhatsApp({ phone, templateId, params }) {
   try {
     const resp = await fetch(WHATSAPP_SEND_ENDPOINT, {
       method: "POST",
@@ -258,10 +258,42 @@ const TRUSTED_COMPANIES = [
   "Tata Group", "Reliance Retail", "HDFC Bank", "Amazon", "Flipkart", "Infosys",
   "Zomato", "Swiggy", "ICICI Bank", "Byju's", "BigBasket", "Larsen & Toubro",
 ];
-function seedDB() {
+
+// Supabase row <-> app object mapping. The DB uses snake_case columns
+// (job_type, salary_min, etc.); the app's internal job objects use the
+// original camelCase shape everything else in this file already expects.
+function dbRowToJob(row) {
   return {
-    jobs: [],
-    applications: [],
+    id: row.id,
+    title: row.title,
+    company: row.company,
+    category: row.category,
+    location: row.location,
+    type: row.job_type,
+    exp: row.experience || "Not specified",
+    salMin: row.salary_min || 0,
+    salMax: row.salary_max || 0,
+    salUnit: row.salary_unit || "month",
+    tags: row.tags || [],
+    desc: row.description || [],
+    active: row.active,
+    postedAt: new Date(row.created_at).getTime(),
+  };
+}
+function jobToDbRow(job) {
+  return {
+    title: job.title,
+    company: job.company,
+    category: job.category,
+    location: job.location,
+    job_type: job.type,
+    experience: job.exp,
+    salary_min: job.salMin,
+    salary_max: job.salMax,
+    salary_unit: job.salUnit,
+    tags: job.tags,
+    description: job.desc,
+    active: job.active,
   };
 }
 
@@ -291,7 +323,7 @@ function Header({ onHome }) {
 /* ════════════════════════════════════════════════════════════════════════
    CANDIDATE: HOME
    ════════════════════════════════════════════════════════════════════════ */
-function Home({ jobs, applications, onJob }) {
+function Home({ jobs, applications, onJob, loading }) {
   const [cat, setCat] = useState("All");
   const [pulseCount, setPulseCount] = useState(1284 + applications.length);
 
@@ -358,7 +390,9 @@ function Home({ jobs, applications, onJob }) {
             <button key={c} className={`sp-cat-pill${cat === c ? " active" : ""}`} onClick={() => { setCat(c); trackPH("category_filtered", { category: c }); }}>{c}</button>
           ))}
         </div>
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="sp-empty">Loading open roles…</div>
+        ) : filtered.length === 0 ? (
           <div className="sp-empty">No roles match those filters right now. Try a broader search.</div>
         ) : (
           <div className="sp-job-grid">
@@ -408,9 +442,7 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
   };
 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const setFile = (e) => setF({ ...f, cvFile: e.target.files?.[0] || null });
-
-  const submit = async (e) => {
+  const setFile = (e) => setF({ ...f, cvFile: e.target.files?.[0] || null });const submit = async (e) => {
     e.preventDefault();
     if (!f.name || !f.phone || !f.email) return;
     setSubmitting(true);
@@ -702,9 +734,7 @@ function AdminApplications({ applications, jobs, onWhatsAppSent }) {
       )}
     </div>
   );
-}
-
-function AdminAnalytics({ jobs, applications, funnel }) {
+}function AdminAnalytics({ jobs, applications, funnel }) {
   const totalViews = funnel.job_viewed || 0;
   const totalStarted = funnel.apply_started || 0;
   const totalCompleted = applications.length;
@@ -758,7 +788,8 @@ function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onWhatsApp
    ROOT APP
    ════════════════════════════════════════════════════════════════════════ */
 export default function App() {
-  const [db, setDb] = useState(seedDB);
+  const [db, setDb] = useState({ jobs: [], applications: [] });
+  const [loadingJobs, setLoadingJobs] = useState(true);
   // Admin is reached only via URL path (e.g. jobpulse.../admin), not a
   // visible nav button. In production with real routing (react-router),
   // replace this with an actual /admin route instead of a path sniff.
@@ -771,6 +802,29 @@ export default function App() {
   const [successData, setSuccessData] = useState(null);
   const [funnel, setFunnel] = useState({ job_viewed: 0, apply_started: 0 });
 
+  // Load jobs from Supabase on first mount. Admin sees all jobs (active +
+  // paused) so they can manage everything; candidate view filters to
+  // active-only itself further down via Home's own logic, but we also only
+  // need active ones there — simplest to fetch admin-relevant data once
+  // here since RLS only allows reading active rows with the anon key
+  // anyway (paused jobs won't come back for either view, which is fine
+  // for this POC — see setup-guide.md if you want admins to see paused
+  // jobs too, that needs Supabase Auth).
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from("jobs")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("Failed to load jobs from Supabase:", error);
+      } else {
+        setDb((d) => ({ ...d, jobs: (data || []).map(dbRowToJob) }));
+      }
+      setLoadingJobs(false);
+    })();
+  }, []);
+
   // Bump lightweight local funnel counters alongside PostHog capture calls,
   // purely so the Admin Analytics tab has something to show in this
   // sandboxed preview (PostHog itself isn't reachable here).
@@ -778,26 +832,66 @@ export default function App() {
 
   const goHome = () => { setView("candidate"); setPage("home"); setSelJob(null); };
   const openJob = (j) => { setSelJob(j); setPage("jd"); bump("job_viewed"); window.scrollTo(0, 0); };
-  const finishApply = (data) => {
-    setDb((d) => ({
-      ...d,
-      applications: [
-        ...d.applications,
-        {
-          name: data.name, phone: data.phone, email: data.email,
-          notice_period: data.noticePeriod, current_salary: data.currentSalary,
-          cv_file_name: data.cvFileName, job_id: data.job.id, at: Date.now(),
-          whatsapp_last_sent: null,
-          ...getUTM(),
-        },
-      ],
-    }));
+
+  const finishApply = async (data) => {
+    const utm = getUTM();
+    const record = {
+      name: data.name, phone: data.phone, email: data.email,
+      notice_period: data.noticePeriod, current_salary: data.currentSalary,
+      cv_file_name: data.cvFileName, job_id: data.job.id, at: Date.now(),
+      whatsapp_last_sent: null,
+      ...utm,
+    };
+    // Optimistic local update so the UI (success page, admin table this
+    // session) works instantly regardless of network latency.
+    setDb((d) => ({ ...d, applications: [...d.applications, record] }));
     setSuccessData(data);
     setPage("success");
     window.scrollTo(0, 0);
+
+    // Persist to Supabase so it survives refreshes / other sessions.
+    const { error } = await supabase.from("applications").insert({
+      job_id: data.job.id,
+      name: data.name,
+      phone: data.phone,
+      email: data.email,
+      notice_period: data.noticePeriod,
+      current_salary: data.currentSalary,
+      cv_url: data.cvFileName || null, // filename only for now — real file upload needs Supabase Storage, see setup-guide.md
+      utm_source: utm.utm_source,
+      utm_medium: utm.utm_medium,
+      utm_campaign: utm.utm_campaign,
+      fbclid: utm.fbclid,
+    });
+    if (error) console.error("Failed to save application to Supabase:", error);
   };
-  const createJob = (job) => setDb((d) => ({ ...d, jobs: [job, ...d.jobs] }));
-  const toggleJob = (id) => setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? { ...j, active: !j.active } : j)) }));
+
+  const createJob = async (job) => {
+    // Optimistic local add with a temporary id, replaced once Supabase
+    // confirms the real row (or removed if the insert fails).
+    const tempId = job.id;
+    setDb((d) => ({ ...d, jobs: [job, ...d.jobs] }));
+
+    const { data, error } = await supabase.from("jobs").insert(jobToDbRow(job)).select().single();
+    if (error) {
+      console.error("Failed to save job to Supabase:", error);
+      setDb((d) => ({ ...d, jobs: d.jobs.filter((j) => j.id !== tempId) }));
+    } else {
+      setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === tempId ? dbRowToJob(data) : j)) }));
+    }
+  };
+
+  const toggleJob = async (id) => {
+    const job = db.jobs.find((j) => j.id === id);
+    if (!job) return;
+    setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? { ...j, active: !j.active } : j)) }));
+    const { error } = await supabase.from("jobs").update({ active: !job.active }).eq("id", id);
+    if (error) {
+      console.error("Failed to update job in Supabase:", error);
+      setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? { ...j, active: job.active } : j)) })); // revert
+    }
+  };
+
   const markWhatsAppSent = (phones) => setDb((d) => ({
     ...d,
     applications: d.applications.map((a) => (phones.includes(a.phone) ? { ...a, whatsapp_last_sent: Date.now() } : a)),
@@ -810,7 +904,7 @@ export default function App() {
 
       {view === "candidate" && (
         <>
-          {page === "home" && <Home jobs={db.jobs} applications={db.applications} onJob={openJob} />}
+          {page === "home" && <Home jobs={db.jobs} applications={db.applications} onJob={openJob} loading={loadingJobs} />}
           {page === "jd" && selJob && <JobDetail job={selJob} onBack={() => setPage("home")} onSuccess={finishApply} onStart={() => bump("apply_started")} />}
           {page === "success" && successData && <Success data={successData} onHome={goHome} />}
         </>
