@@ -255,7 +255,7 @@ async function sendWhatsApp({ phone, templateId, params }) {
     return false;
   }
 }
-const WHATSAPP_TEMPLATES = [
+{ id: "job_promotion", label: "New job for you (with link)", preview: (name, job, company, location, exp, salary) => `Hi ${name}\nYour profile is being reviewed for ${job} at ${company} in ${location}\n\nExp required ${exp}\nSalary offered ${salary}\n\nIf interested click on the link below to register` },
   { id: "application_received", label: "Application received", preview: (name, job) => `Hi ${name}, thanks for applying to ${job} on JobPulse! A recruiter will review your application and get back to you within 24–48 hours.` },
   { id: "interview_invite", label: "Interview invite", preview: (name, job) => `Hi ${name}, good news — we'd like to invite you for an interview for the ${job} role. Please reply with your availability this week.` },
   { id: "document_request", label: "Document request", preview: (name, job) => `Hi ${name}, to move ahead with your application for ${job}, please share your updated CV and a valid ID proof at your earliest convenience.` },
@@ -720,7 +720,7 @@ function AdminManageJobs({ jobs, applications, onToggle, onUpdate, onWhatsAppSen
     const link = jobLink(job);
     const targets = pool.filter((a) => selected.has(a.phone));
     for (const a of targets) {
-      await sendWhatsApp({ phone: a.phone, templateId: "job_promotion", params: { name: a.name, job_title: job.title, link } });
+            await sendWhatsApp({ phone: a.phone, templateId: "job_promotion", params: { name: a.name, job_title: job.title, company: job.company, location: job.location, exp: job.exp || "Not specified", salary: fmtSalary(job), job_id: job.id } });
     }
     onWhatsAppSent(targets.map((a) => a.phone));
     setSending(false);
@@ -778,7 +778,7 @@ function AdminManageJobs({ jobs, applications, onToggle, onUpdate, onWhatsAppSen
                       <label>Job link (this is the CTA candidates will tap)</label>
                       <input readOnly value={jobLink(j)} onClick={(e) => e.target.select()} />
                     </div>
-                    <div className="sp-wa-preview">"{WHATSAPP_TEMPLATES.find((t) => t.id === "job_promotion").preview("Candidate Name", j.title, jobLink(j))}"</div>
+                                        <div className="sp-wa-preview">"{WHATSAPP_TEMPLATES.find((t) => t.id === "job_promotion").preview("Candidate Name", j.title, j.company, j.location, j.exp || "Not specified", fmtSalary(j))}"</div>
                     {pool.length === 0 ? (
                       <p style={{ color: "var(--slate)" }}>No candidates in your pool yet — this fills up as people apply to any job.</p>
                     ) : (
