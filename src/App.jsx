@@ -255,12 +255,12 @@ async function sendWhatsApp({ phone, templateId, params }) {
     return false;
   }
 }
-{ id: "job_promotion", label: "New job for you (with link)", preview: (name, job, company, location, exp, salary) => `Hi ${name}\nYour profile is being reviewed for ${job} at ${company} in ${location}\n\nExp required ${exp}\nSalary offered ${salary}\n\nIf interested click on the link below to register` },
+const WHATSAPP_TEMPLATES = [
+   { id: "job_promotion", label: "New job for you (with link)", preview: (name, job, company, location, exp, salary) => `Hi ${name}\nYour profile is being reviewed for ${job} at ${company} in ${location}\n\nExp required ${exp}\nSalary offered ${salary}\n\nIf interested click on the link below to register` },
   { id: "application_received", label: "Application received", preview: (name, job) => `Hi ${name}, thanks for applying to ${job} on JobPulse! A recruiter will review your application and get back to you within 24–48 hours.` },
   { id: "interview_invite", label: "Interview invite", preview: (name, job) => `Hi ${name}, good news — we'd like to invite you for an interview for the ${job} role. Please reply with your availability this week.` },
   { id: "document_request", label: "Document request", preview: (name, job) => `Hi ${name}, to move ahead with your application for ${job}, please share your updated CV and a valid ID proof at your earliest convenience.` },
-  { id: "job_promotion", label: "New job for you (with link)", preview: (name, job, link) => `Hi ${name}, we think you'd be a great fit for a new role: ${job}. Check it out and apply here: ${link || "[link]"}` },
-];
+  ];
 
 /* ════════════════════════════════════════════════════════════════════════
    MOCK DATA LAYER — swap for Supabase calls per SUPABASE SCHEMA comments
