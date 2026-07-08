@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabaseClient";
+import Papa from "papaparse";
 
 /* ════════════════════════════════════════════════════════════════════════
    JobPulse — internal jobs POC (placeholder brand, not affiliated with any
@@ -8,7 +9,7 @@ import { supabase } from "./supabaseClient";
    ════════════════════════════════════════════════════════════════════════ */
 
 const POSTHOG_API_KEY = "phc_AdNBNr4z2tTcRFqSAQM5XjJamQJjoEvEoFdBZftXhWYk";
-const POSTHOG_HOST = "https://us.i.posthog.co";
+const POSTHOG_HOST = "https://us.i.posthog.com";
 const META_PIXEL_ID = "YOUR_META_PIXEL_ID";
 // Supabase edge functions live on your Supabase project's own domain, not
 // your frontend's domain — these must be absolute URLs, not relative paths.
@@ -258,6 +259,7 @@ const WHATSAPP_TEMPLATES = [
   { id: "application_received", label: "Application received", preview: (name, job) => `Hi ${name}, thanks for applying to ${job} on JobPulse! A recruiter will review your application and get back to you within 24–48 hours.` },
   { id: "interview_invite", label: "Interview invite", preview: (name, job) => `Hi ${name}, good news — we'd like to invite you for an interview for the ${job} role. Please reply with your availability this week.` },
   { id: "document_request", label: "Document request", preview: (name, job) => `Hi ${name}, to move ahead with your application for ${job}, please share your updated CV and a valid ID proof at your earliest convenience.` },
+  { id: "job_promotion", label: "New job for you (with link)", preview: (name, job, link) => `Hi ${name}, we think you'd be a great fit for a new role: ${job}. Check it out and apply here: ${link || "[link]"}` },
 ];
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -663,9 +665,12 @@ function AdminPostJob({ onCreate }) {
   );
 }
 
-function AdminManageJobs({ jobs, onToggle, onUpdate }) {
+function AdminManageJobs({ jobs, applications, onToggle, onUpdate, onWhatsAppSent }) {
   const [editingId, setEditingId] = useState(null);
   const [ef, setEf] = useState(null);
+  const [promotingId, setPromotingId] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [sending, setSending] = useState(false);
 
   const startEdit = (job) => {
     setEditingId(job.id);
@@ -688,6 +693,38 @@ function AdminManageJobs({ jobs, onToggle, onUpdate }) {
       desc: ef.desc.split("\n").map((d) => d.trim()).filter(Boolean),
     });
     cancelEdit();
+  };
+
+  // Dedupe the pool by phone number — the same candidate may have applied
+  // to multiple jobs, and this is a broadcast to *people*, not applications.
+  const pool = useMemo(() => {
+    const seen = new Map();
+    for (const a of applications) if (!seen.has(a.phone)) seen.set(a.phone, a);
+    return Array.from(seen.values());
+  }, [applications]);
+
+  const startPromote = (jobId) => { setPromotingId(jobId); setSelected(new Set()); };
+  const cancelPromote = () => { setPromotingId(null); setSelected(new Set()); };
+  const toggleCandidate = (phone) => setSelected((s) => {
+    const next = new Set(s);
+    next.has(phone) ? next.delete(phone) : next.add(phone);
+    return next;
+  });
+  const toggleAllCandidates = () => setSelected((s) => (s.size === pool.length ? new Set() : new Set(pool.map((a) => a.phone))));
+
+  const jobLink = (job) => `${typeof window !== "undefined" ? window.location.origin : ""}/job/${job.id}`;
+
+  const sendPromotion = async (job) => {
+    if (selected.size === 0) return;
+    setSending(true);
+    const link = jobLink(job);
+    const targets = pool.filter((a) => selected.has(a.phone));
+    for (const a of targets) {
+      await sendWhatsApp({ phone: a.phone, templateId: "job_promotion", params: { name: a.name, job_title: job.title, link } });
+    }
+    onWhatsAppSent(targets.map((a) => a.phone));
+    setSending(false);
+    cancelPromote();
   };
 
   return (
@@ -733,6 +770,47 @@ function AdminManageJobs({ jobs, onToggle, onUpdate }) {
                   </div>
                 </td>
               </tr>
+            ) : promotingId === j.id ? (
+              <tr key={j.id}>
+                <td colSpan={5}>
+                  <div style={{ padding: "12px 0" }}>
+                    <div className="sp-field">
+                      <label>Job link (this is the CTA candidates will tap)</label>
+                      <input readOnly value={jobLink(j)} onClick={(e) => e.target.select()} />
+                    </div>
+                    <div className="sp-wa-preview">"{WHATSAPP_TEMPLATES.find((t) => t.id === "job_promotion").preview("Candidate Name", j.title, jobLink(j))}"</div>
+                    {pool.length === 0 ? (
+                      <p style={{ color: "var(--slate)" }}>No candidates in your pool yet — this fills up as people apply to any job.</p>
+                    ) : (
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <input type="checkbox" checked={selected.size === pool.length} onChange={toggleAllCandidates} />
+                          <span style={{ fontSize: 13, color: "var(--slate)" }}>Select all ({pool.length} candidates in pool)</span>
+                        </div>
+                        <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 9, marginBottom: 14 }}>
+                          <table className="sp-table">
+                            <tbody>
+                              {pool.map((a) => (
+                                <tr key={a.phone}>
+                                  <td style={{ width: 30 }}><input type="checkbox" checked={selected.has(a.phone)} onChange={() => toggleCandidate(a.phone)} /></td>
+                                  <td>{a.name}</td>
+                                  <td>{a.phone}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="sp-submit" style={{ width: "auto", padding: "10px 18px", marginTop: 0 }} disabled={selected.size === 0 || sending} onClick={() => sendPromotion(j)}>
+                        {sending ? "Sending…" : `Send to selected (${selected.size})`}
+                      </button>
+                      <button className="sp-mini-btn" onClick={cancelPromote}>Cancel</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
             ) : (
               <tr key={j.id}>
                 <td>{j.title}</td><td>{j.company}</td><td>{j.category}</td>
@@ -740,6 +818,7 @@ function AdminManageJobs({ jobs, onToggle, onUpdate }) {
                 <td style={{ display: "flex", gap: 6 }}>
                   <button className="sp-mini-btn" onClick={() => startEdit(j)}>Edit</button>
                   <button className="sp-mini-btn" onClick={() => onToggle(j.id)}>{j.active ? "Pause" : "Activate"}</button>
+                  <button className="sp-mini-btn" onClick={() => startPromote(j.id)}>Promote via WhatsApp</button>
                 </td>
               </tr>
             )
@@ -879,6 +958,102 @@ function AdminAnalytics({ jobs, applications, funnel }) {
   );
 }
 
+function AdminCampaign({ jobs }) {
+  const [contacts, setContacts] = useState([]);
+  const [fileName, setFileName] = useState("");
+  const [templateId, setTemplateId] = useState(WHATSAPP_TEMPLATES[0].id);
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [link, setLink] = useState("");
+  const [sending, setSending] = useState(false);
+  const [progress, setProgress] = useState({ sent: 0, failed: 0 });
+
+  const template = WHATSAPP_TEMPLATES.find((t) => t.id === templateId);
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const parsed = (results.data || [])
+          .map((row) => {
+            const keys = Object.keys(row);
+            const nameKey = keys.find((k) => k.toLowerCase().includes("name"));
+            const phoneKey = keys.find((k) => /phone|mobile|number/.test(k.toLowerCase()));
+            return {
+              name: (nameKey ? row[nameKey] : "")?.toString().trim() || "Candidate",
+              phone: (phoneKey ? row[phoneKey] : "")?.toString().trim() || "",
+            };
+          })
+          .filter((c) => c.phone);
+        setContacts(parsed);
+        setProgress({ sent: 0, failed: 0 });
+      },
+    });
+  };
+
+  const useJob = (id) => {
+    setSelectedJobId(id);
+    const j = jobs.find((j) => j.id === id);
+    if (j) {
+      setJobTitle(j.title);
+      setLink(`${typeof window !== "undefined" ? window.location.origin : ""}/job/${j.id}`);
+    }
+  };
+
+  const sendCampaign = async () => {
+    if (contacts.length === 0) return;
+    setSending(true);
+    setProgress({ sent: 0, failed: 0 });
+    for (const c of contacts) {
+      const ok = await sendWhatsApp({ phone: c.phone, templateId, params: { name: c.name, job_title: jobTitle, link } });
+      setProgress((p) => (ok ? { ...p, sent: p.sent + 1 } : { ...p, failed: p.failed + 1 }));
+    }
+    setSending(false);
+  };
+
+  return (
+    <div className="sp-card">
+      <h3 style={{ marginTop: 0 }}>WhatsApp campaign — upload your own list</h3>
+      <p style={{ color: "var(--slate)", fontSize: 13.5 }}>
+        Upload a CSV with a name column and a phone column (any header containing "name" / "phone", "mobile", or "number" is auto-detected). Only upload contacts who've actually agreed to be reached this way — WhatsApp's template system doesn't make cold, unsolicited outreach acceptable, and high complaint rates can get your WhatsApp number restricted.
+      </p>
+      <div className="sp-field">
+        <label>CSV file</label>
+        <input type="file" accept=".csv" onChange={handleFile} />
+        {fileName && <div style={{ fontSize: 12.5, color: "var(--slate)", marginTop: 6 }}>{contacts.length} contact{contacts.length === 1 ? "" : "s"} loaded from {fileName}</div>}
+      </div>
+      <div className="sp-field-row">
+        <div className="sp-field"><label>Template</label>
+          <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+            {WHATSAPP_TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </div>
+        <div className="sp-field"><label>Use an existing job (optional, auto-fills below)</label>
+          <select value={selectedJobId} onChange={(e) => useJob(e.target.value)}>
+            <option value="">— Manual entry —</option>
+            {jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="sp-field-row">
+        <div className="sp-field"><label>Job title (used in message)</label><input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} /></div>
+        <div className="sp-field"><label>Link (used in message)</label><input value={link} onChange={(e) => setLink(e.target.value)} /></div>
+      </div>
+      <div className="sp-wa-preview">"{template.preview(contacts[0]?.name || "Candidate Name", jobTitle || "Job Title", link || "[link]")}"</div>
+      <button className="sp-submit" style={{ width: "auto", padding: "10px 18px" }} disabled={contacts.length === 0 || sending} onClick={sendCampaign}>
+        {sending ? `Sending… (${progress.sent + progress.failed}/${contacts.length})` : `Send campaign to ${contacts.length} contact${contacts.length === 1 ? "" : "s"}`}
+      </button>
+      {!sending && (progress.sent > 0 || progress.failed > 0) && (
+        <p style={{ marginTop: 10, fontSize: 13.5, color: "var(--slate)" }}>Sent: {progress.sent} · Failed: {progress.failed}</p>
+      )}
+    </div>
+  );
+}
+
 function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, onWhatsAppSent, onExit, loadingApps }) {
   const [tab, setTab] = useState("post");
   return (
@@ -888,13 +1063,14 @@ function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, 
         <button className="sp-admin-link" onClick={onExit}>Exit to candidate view</button>
       </div>
       <div className="sp-adm-tabs">
-        {[["post", "Post a job"], ["manage", "Manage jobs"], ["apps", "Applications"], ["analytics", "Analytics"]].map(([k, l]) => (
+        {[["post", "Post a job"], ["manage", "Manage jobs"], ["apps", "Applications"], ["campaign", "WhatsApp Campaign"], ["analytics", "Analytics"]].map(([k, l]) => (
           <button key={k} className={`sp-adm-tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
       {tab === "post" && <AdminPostJob onCreate={onCreate} />}
-      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} onUpdate={onUpdate} />}
+      {tab === "manage" && <AdminManageJobs jobs={jobs} applications={applications} onToggle={onToggle} onUpdate={onUpdate} onWhatsAppSent={onWhatsAppSent} />}
       {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} onWhatsAppSent={onWhatsAppSent} loading={loadingApps} />}
+      {tab === "campaign" && <AdminCampaign jobs={jobs} />}
       {tab === "analytics" && <AdminAnalytics jobs={jobs} applications={applications} funnel={funnel} />}
     </div>
   );
@@ -917,6 +1093,22 @@ export default function App() {
   const [selJob, setSelJob] = useState(null);
   const [successData, setSuccessData] = useState(null);
   const [funnel, setFunnel] = useState({ job_viewed: 0, apply_started: 0 });
+
+  // Deep link support: a URL like yoursite.com/job/<id> (used as the CTA
+  // link in WhatsApp promotion messages) should open straight to that
+  // job's detail page once jobs have loaded, without the candidate ever
+  // seeing the homepage first.
+  const [pendingJobId] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const m = window.location.pathname.match(/\/job\/([^/]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  });
+  useEffect(() => {
+    if (pendingJobId && db.jobs.length > 0 && page === "home") {
+      const j = db.jobs.find((j) => j.id === pendingJobId);
+      if (j) { setSelJob(j); setPage("jd"); }
+    }
+  }, [pendingJobId, db.jobs]);
 
   // Load jobs from Supabase on first mount. Admin sees all jobs (active +
   // paused) so they can manage everything; candidate view filters to
