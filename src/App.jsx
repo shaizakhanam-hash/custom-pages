@@ -7,12 +7,24 @@ import { supabase } from "./supabaseClient";
    at a real domain once this graduates past POC — see setup-guide.md.
    ════════════════════════════════════════════════════════════════════════ */
 
-const POSTHOG_API_KEY = "phc_AdNBNr4z2tTcRFqSAQM5XjJamQJjoEvEoFdBZftXhWYk"; // ph_...
-const POSTHOG_HOST = "https://us.i.posthog.com";
+const POSTHOG_API_KEY = "phc_AdNBNr4z2tTcRFqSAQM5XjJamQJjoEvEoFdBZftXhWYk";
+const POSTHOG_HOST = "https://us.i.posthog.co";
 const META_PIXEL_ID = "YOUR_META_PIXEL_ID";
-const SERVER_CAPI_ENDPOINT = "/functions/v1/meta-capi-on-apply"; // Supabase edge function path, see setup guide
-const WHATSAPP_SEND_ENDPOINT = "/functions/v1/whatsapp-send"; // Supabase edge function path, see setup guide
-const ADMIN_DATA_ENDPOINT = "/functions/v1/admin-get-applications"; // Supabase edge function path, see setup guide
+// Supabase edge functions live on your Supabase project's own domain, not
+// your frontend's domain — these must be absolute URLs, not relative paths.
+// They also require the anon key on every call (Supabase's own auth layer,
+// separate from your admin password), or Supabase rejects the request
+// before your function code even runs.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SERVER_CAPI_ENDPOINT = `${SUPABASE_URL}/functions/v1/meta-capi-on-apply`;
+const WHATSAPP_SEND_ENDPOINT = `${SUPABASE_URL}/functions/v1/whatsapp-send`;
+const ADMIN_DATA_ENDPOINT = `${SUPABASE_URL}/functions/v1/admin-get-applications`;
+const EDGE_FN_HEADERS = {
+  "Content-Type": "application/json",
+  "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+  "apikey": SUPABASE_ANON_KEY,
+};
 const ADMIN_PASSWORD = "Shine@123"; // swap for real Supabase Auth in production
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -216,7 +228,7 @@ async function sendServerConversion(payload) {
   try {
     await fetch(SERVER_CAPI_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: EDGE_FN_HEADERS,
       body: JSON.stringify(payload),
     });
   } catch (e) {
@@ -233,7 +245,7 @@ async function sendWhatsApp({ phone, templateId, params }) {
   try {
     const resp = await fetch(WHATSAPP_SEND_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: EDGE_FN_HEADERS,
       body: JSON.stringify({ phone, template_id: templateId, params }),
     });
     return resp.ok;
@@ -320,6 +332,17 @@ function fmtSalary(j) {
   if (!j.salMin && !j.salMax) return "Salary not specified";
   const f = (n) => (n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`);
   return `${f(j.salMin)}–${f(j.salMax)} / ${j.salUnit === "annum" ? "yr" : "mo"}`;
+}
+// Admin salary inputs: "Per annum" roles are conventionally quoted in
+// lakhs in India (e.g. "3-4 LPA"), so the form takes a lakhs number and
+// this converts it to the actual rupee figure stored in the DB. "Per
+// month" roles are typed as literal rupees (e.g. 18000), no conversion.
+function salaryInputToRupees(value, unit) {
+  const n = Number(value) || 0;
+  return unit === "annum" ? Math.round(n * 100000) : n;
+}
+function rupeesToSalaryInput(rupees, unit) {
+  return unit === "annum" ? (rupees ? rupees / 100000 : "") : rupees || "";
 }
 function timeAgo(ts) {
   const d = Math.floor((Date.now() - ts) / 86400000);
@@ -595,7 +618,7 @@ function AdminPostJob({ onCreate }) {
       id: "j" + uid().slice(0, 6),
       title: f.title, company: f.company, category: f.category, location: f.location,
       type: f.type, exp: f.exp || "Not specified",
-      salMin: Number(f.salMin) || 0, salMax: Number(f.salMax) || 0, salUnit: f.salUnit,
+      salMin: salaryInputToRupees(f.salMin, f.salUnit), salMax: salaryInputToRupees(f.salMax, f.salUnit), salUnit: f.salUnit,
       tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean),
       desc: f.desc.split("\n").map((d) => d.trim()).filter(Boolean),
       active: true, postedAt: Date.now(),
@@ -626,8 +649,8 @@ function AdminPostJob({ onCreate }) {
           <div className="sp-field"><label>Experience</label><input value={f.exp} onChange={set("exp")} placeholder="e.g. 0–2 yrs" /></div>
         </div>
         <div className="sp-field-row">
-          <div className="sp-field"><label>Min salary</label><input type="number" value={f.salMin} onChange={set("salMin")} /></div>
-          <div className="sp-field"><label>Max salary</label><input type="number" value={f.salMax} onChange={set("salMax")} /></div>
+          <div className="sp-field"><label>Min salary {f.salUnit === "annum" ? "(in Lakhs, e.g. 3 for ₹3L)" : "(₹ per month)"}</label><input type="number" step="0.1" value={f.salMin} onChange={set("salMin")} /></div>
+          <div className="sp-field"><label>Max salary {f.salUnit === "annum" ? "(in Lakhs, e.g. 5 for ₹5L)" : "(₹ per month)"}</label><input type="number" step="0.1" value={f.salMax} onChange={set("salMax")} /></div>
         </div>
         <div className="sp-field"><label>Salary unit</label>
           <select value={f.salUnit} onChange={set("salUnit")}><option value="month">Per month</option><option value="annum">Per annum</option></select>
@@ -648,7 +671,7 @@ function AdminManageJobs({ jobs, onToggle, onUpdate }) {
     setEditingId(job.id);
     setEf({
       title: job.title, company: job.company, category: job.category, location: job.location,
-      type: job.type, exp: job.exp, salMin: job.salMin, salMax: job.salMax, salUnit: job.salUnit,
+      type: job.type, exp: job.exp, salMin: rupeesToSalaryInput(job.salMin, job.salUnit), salMax: rupeesToSalaryInput(job.salMax, job.salUnit), salUnit: job.salUnit,
       tags: job.tags.join(", "), desc: job.desc.join("\n"),
     });
   };
@@ -660,7 +683,7 @@ function AdminManageJobs({ jobs, onToggle, onUpdate }) {
     onUpdate(editingId, {
       title: ef.title, company: ef.company, category: ef.category, location: ef.location,
       type: ef.type, exp: ef.exp || "Not specified",
-      salMin: Number(ef.salMin) || 0, salMax: Number(ef.salMax) || 0, salUnit: ef.salUnit,
+      salMin: salaryInputToRupees(ef.salMin, ef.salUnit), salMax: salaryInputToRupees(ef.salMax, ef.salUnit), salUnit: ef.salUnit,
       tags: ef.tags.split(",").map((t) => t.trim()).filter(Boolean),
       desc: ef.desc.split("\n").map((d) => d.trim()).filter(Boolean),
     });
@@ -695,8 +718,8 @@ function AdminManageJobs({ jobs, onToggle, onUpdate }) {
                       <div className="sp-field"><label>Experience</label><input value={ef.exp} onChange={set("exp")} /></div>
                     </div>
                     <div className="sp-field-row">
-                      <div className="sp-field"><label>Min salary</label><input type="number" value={ef.salMin} onChange={set("salMin")} /></div>
-                      <div className="sp-field"><label>Max salary</label><input type="number" value={ef.salMax} onChange={set("salMax")} /></div>
+                      <div className="sp-field"><label>Min salary {ef.salUnit === "annum" ? "(in Lakhs)" : "(₹ per month)"}</label><input type="number" step="0.1" value={ef.salMin} onChange={set("salMin")} /></div>
+                      <div className="sp-field"><label>Max salary {ef.salUnit === "annum" ? "(in Lakhs)" : "(₹ per month)"}</label><input type="number" step="0.1" value={ef.salMax} onChange={set("salMax")} /></div>
                     </div>
                     <div className="sp-field"><label>Salary unit</label>
                       <select value={ef.salUnit} onChange={set("salUnit")}><option value="month">Per month</option><option value="annum">Per annum</option></select>
@@ -929,7 +952,7 @@ export default function App() {
       try {
         const resp = await fetch(ADMIN_DATA_ENDPOINT, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: EDGE_FN_HEADERS,
           body: JSON.stringify({ password: ADMIN_PASSWORD }),
         });
         if (resp.ok) {
