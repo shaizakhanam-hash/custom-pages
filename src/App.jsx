@@ -227,7 +227,8 @@ async function sendServerConversion(payload) {
 // frontend code. WhatsApp requires business-initiated messages outside an
 // active 24-hour customer conversation to use pre-approved message
 // templates — that's why this takes a template_id + params rather than
-// arbitrary freeform text. See setup-guide.md for template approval steps.async function sendWhatsApp({ phone, templateId, params }) {
+// arbitrary freeform text. See setup-guide.md for template approval steps.
+async function sendWhatsApp({ phone, templateId, params }) {
   try {
     const resp = await fetch(WHATSAPP_SEND_ENDPOINT, {
       method: "POST",
