@@ -7,8 +7,8 @@ import { supabase } from "./supabaseClient";
    at a real domain once this graduates past POC — see setup-guide.md.
    ════════════════════════════════════════════════════════════════════════ */
 
-const POSTHOG_API_KEY = "YOUR_POSTHOG_PROJECT_API_KEY"; // ph_...
-const POSTHOG_HOST = "https://us.i.posthog.com"; // or https://eu.i.posthog.com
+const POSTHOG_API_KEY = "https://us.i.posthog.com";
+const POSTHOG_HOST = "https://us.i.posthog.com";
 const META_PIXEL_ID = "YOUR_META_PIXEL_ID";
 const SERVER_CAPI_ENDPOINT = "/functions/v1/meta-capi-on-apply"; // Supabase edge function path, see setup guide
 const WHATSAPP_SEND_ENDPOINT = "/functions/v1/whatsapp-send"; // Supabase edge function path, see setup guide
