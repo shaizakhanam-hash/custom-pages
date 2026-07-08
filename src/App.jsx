@@ -7,11 +7,12 @@ import { supabase } from "./supabaseClient";
    at a real domain once this graduates past POC — see setup-guide.md.
    ════════════════════════════════════════════════════════════════════════ */
 
-const POSTHOG_API_KEY = "https://us.i.posthog.com";
+const POSTHOG_API_KEY = "phc_AdNBNr4z2tTcRFqSAQM5XjJamQJjoEvEoFdBZftXhWYk"; // ph_...
 const POSTHOG_HOST = "https://us.i.posthog.com";
 const META_PIXEL_ID = "YOUR_META_PIXEL_ID";
 const SERVER_CAPI_ENDPOINT = "/functions/v1/meta-capi-on-apply"; // Supabase edge function path, see setup guide
 const WHATSAPP_SEND_ENDPOINT = "/functions/v1/whatsapp-send"; // Supabase edge function path, see setup guide
+const ADMIN_DATA_ENDPOINT = "/functions/v1/admin-get-applications"; // Supabase edge function path, see setup guide
 const ADMIN_PASSWORD = "Shine@123"; // swap for real Supabase Auth in production
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -297,8 +298,26 @@ function jobToDbRow(job) {
     active: job.active,
   };
 }
+function dbRowToApplication(row) {
+  return {
+    name: row.name,
+    phone: row.phone,
+    email: row.email,
+    notice_period: row.notice_period,
+    current_salary: row.current_salary,
+    cv_file_name: row.cv_url,
+    job_id: row.job_id,
+    at: new Date(row.created_at).getTime(),
+    whatsapp_last_sent: row.whatsapp_last_sent_at ? new Date(row.whatsapp_last_sent_at).getTime() : null,
+    utm_source: row.utm_source,
+    utm_medium: row.utm_medium,
+    utm_campaign: row.utm_campaign,
+    fbclid: row.fbclid,
+  };
+}
 
 function fmtSalary(j) {
+  if (!j.salMin && !j.salMax) return "Salary not specified";
   const f = (n) => (n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`);
   return `${f(j.salMin)}–${f(j.salMax)} / ${j.salUnit === "annum" ? "yr" : "mo"}`;
 }
@@ -443,7 +462,9 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
   };
 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const setFile = (e) => setF({ ...f, cvFile: e.target.files?.[0] || null });const submit = async (e) => {
+  const setFile = (e) => setF({ ...f, cvFile: e.target.files?.[0] || null });
+
+  const submit = async (e) => {
     e.preventDefault();
     if (!f.name || !f.phone || !f.email) return;
     setSubmitting(true);
@@ -619,7 +640,33 @@ function AdminPostJob({ onCreate }) {
   );
 }
 
-function AdminManageJobs({ jobs, onToggle }) {
+function AdminManageJobs({ jobs, onToggle, onUpdate }) {
+  const [editingId, setEditingId] = useState(null);
+  const [ef, setEf] = useState(null);
+
+  const startEdit = (job) => {
+    setEditingId(job.id);
+    setEf({
+      title: job.title, company: job.company, category: job.category, location: job.location,
+      type: job.type, exp: job.exp, salMin: job.salMin, salMax: job.salMax, salUnit: job.salUnit,
+      tags: job.tags.join(", "), desc: job.desc.join("\n"),
+    });
+  };
+  const cancelEdit = () => { setEditingId(null); setEf(null); };
+  const set = (k) => (e) => setEf({ ...ef, [k]: e.target.value });
+
+  const saveEdit = () => {
+    if (!ef.title || !ef.company || !ef.location) return;
+    onUpdate(editingId, {
+      title: ef.title, company: ef.company, category: ef.category, location: ef.location,
+      type: ef.type, exp: ef.exp || "Not specified",
+      salMin: Number(ef.salMin) || 0, salMax: Number(ef.salMax) || 0, salUnit: ef.salUnit,
+      tags: ef.tags.split(",").map((t) => t.trim()).filter(Boolean),
+      desc: ef.desc.split("\n").map((d) => d.trim()).filter(Boolean),
+    });
+    cancelEdit();
+  };
+
   return (
     <div className="sp-card">
       <h3 style={{ marginTop: 0 }}>All jobs ({jobs.length})</h3>
@@ -627,11 +674,52 @@ function AdminManageJobs({ jobs, onToggle }) {
         <thead><tr><th>Title</th><th>Company</th><th>Category</th><th>Status</th><th></th></tr></thead>
         <tbody>
           {jobs.map((j) => (
-            <tr key={j.id}>
-              <td>{j.title}</td><td>{j.company}</td><td>{j.category}</td>
-              <td><span className={`sp-badge ${j.active ? "on" : "off"}`}>{j.active ? "Live" : "Paused"}</span></td>
-              <td><button className="sp-mini-btn" onClick={() => onToggle(j.id)}>{j.active ? "Pause" : "Activate"}</button></td>
-            </tr>
+            editingId === j.id ? (
+              <tr key={j.id}>
+                <td colSpan={5}>
+                  <div style={{ padding: "12px 0" }}>
+                    <div className="sp-field-row">
+                      <div className="sp-field"><label>Job title</label><input value={ef.title} onChange={set("title")} /></div>
+                      <div className="sp-field"><label>Company</label><input value={ef.company} onChange={set("company")} /></div>
+                    </div>
+                    <div className="sp-field-row">
+                      <div className="sp-field"><label>Category</label>
+                        <select value={ef.category} onChange={set("category")}>{CATEGORIES.slice(1).map((c) => <option key={c}>{c}</option>)}</select>
+                      </div>
+                      <div className="sp-field"><label>Location</label><input value={ef.location} onChange={set("location")} /></div>
+                    </div>
+                    <div className="sp-field-row">
+                      <div className="sp-field"><label>Job type</label>
+                        <select value={ef.type} onChange={set("type")}><option>Full-time</option><option>Part-time</option><option>Contract</option></select>
+                      </div>
+                      <div className="sp-field"><label>Experience</label><input value={ef.exp} onChange={set("exp")} /></div>
+                    </div>
+                    <div className="sp-field-row">
+                      <div className="sp-field"><label>Min salary</label><input type="number" value={ef.salMin} onChange={set("salMin")} /></div>
+                      <div className="sp-field"><label>Max salary</label><input type="number" value={ef.salMax} onChange={set("salMax")} /></div>
+                    </div>
+                    <div className="sp-field"><label>Salary unit</label>
+                      <select value={ef.salUnit} onChange={set("salUnit")}><option value="month">Per month</option><option value="annum">Per annum</option></select>
+                    </div>
+                    <div className="sp-field"><label>Tags (comma separated)</label><input value={ef.tags} onChange={set("tags")} /></div>
+                    <div className="sp-field"><label>Description (one bullet per line)</label><textarea rows={4} value={ef.desc} onChange={set("desc")} /></div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="sp-submit" style={{ width: "auto", padding: "10px 18px", marginTop: 0 }} onClick={saveEdit}>Save changes</button>
+                      <button className="sp-mini-btn" onClick={cancelEdit}>Cancel</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              <tr key={j.id}>
+                <td>{j.title}</td><td>{j.company}</td><td>{j.category}</td>
+                <td><span className={`sp-badge ${j.active ? "on" : "off"}`}>{j.active ? "Live" : "Paused"}</span></td>
+                <td style={{ display: "flex", gap: 6 }}>
+                  <button className="sp-mini-btn" onClick={() => startEdit(j)}>Edit</button>
+                  <button className="sp-mini-btn" onClick={() => onToggle(j.id)}>{j.active ? "Pause" : "Activate"}</button>
+                </td>
+              </tr>
+            )
           ))}
         </tbody>
       </table>
@@ -639,7 +727,7 @@ function AdminManageJobs({ jobs, onToggle }) {
   );
 }
 
-function AdminApplications({ applications, jobs, onWhatsAppSent }) {
+function AdminApplications({ applications, jobs, onWhatsAppSent, loading }) {
   const [selected, setSelected] = useState(new Set());
   const [templateId, setTemplateId] = useState(WHATSAPP_TEMPLATES[0].id);
   const [sending, setSending] = useState(false);
@@ -689,7 +777,9 @@ function AdminApplications({ applications, jobs, onWhatsAppSent }) {
         <button className="sp-mini-btn" onClick={exportCSV}>Export CSV</button>
       </div>
 
-      {applications.length === 0 ? (
+      {loading ? (
+        <p style={{ color: "var(--slate)" }}>Loading applications…</p>
+      ) : applications.length === 0 ? (
         <p style={{ color: "var(--slate)" }}>No applications yet — try applying to a job from the candidate view.</p>
       ) : (
         <>
@@ -735,7 +825,9 @@ function AdminApplications({ applications, jobs, onWhatsAppSent }) {
       )}
     </div>
   );
-}function AdminAnalytics({ jobs, applications, funnel }) {
+}
+
+function AdminAnalytics({ jobs, applications, funnel }) {
   const totalViews = funnel.job_viewed || 0;
   const totalStarted = funnel.apply_started || 0;
   const totalCompleted = applications.length;
@@ -764,7 +856,7 @@ function AdminApplications({ applications, jobs, onWhatsAppSent }) {
   );
 }
 
-function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onWhatsAppSent, onExit }) {
+function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, onWhatsAppSent, onExit, loadingApps }) {
   const [tab, setTab] = useState("post");
   return (
     <div className="sp-adm-shell">
@@ -778,8 +870,8 @@ function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onWhatsApp
         ))}
       </div>
       {tab === "post" && <AdminPostJob onCreate={onCreate} />}
-      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} />}
-      {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} onWhatsAppSent={onWhatsAppSent} />}
+      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} onUpdate={onUpdate} />}
+      {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} onWhatsAppSent={onWhatsAppSent} loading={loadingApps} />}
       {tab === "analytics" && <AdminAnalytics jobs={jobs} applications={applications} funnel={funnel} />}
     </div>
   );
@@ -825,6 +917,33 @@ export default function App() {
       setLoadingJobs(false);
     })();
   }, []);
+
+  // Fetch real applications data only once the admin has actually logged
+  // in — via the password-gated edge function, not a direct table read.
+  // See admin-get-applications.ts for why this isn't a simple RLS policy.
+  const [loadingApps, setLoadingApps] = useState(false);
+  useEffect(() => {
+    if (!adminAuthed) return;
+    (async () => {
+      setLoadingApps(true);
+      try {
+        const resp = await fetch(ADMIN_DATA_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: ADMIN_PASSWORD }),
+        });
+        if (resp.ok) {
+          const { applications } = await resp.json();
+          setDb((d) => ({ ...d, applications: (applications || []).map(dbRowToApplication) }));
+        } else {
+          console.error("Failed to load applications:", await resp.text());
+        }
+      } catch (e) {
+        console.error("Failed to load applications:", e);
+      }
+      setLoadingApps(false);
+    })();
+  }, [adminAuthed]);
 
   // Bump lightweight local funnel counters alongside PostHog capture calls,
   // purely so the Admin Analytics tab has something to show in this
@@ -893,6 +1012,23 @@ export default function App() {
     }
   };
 
+  const updateJob = async (id, updates) => {
+    const prevJob = db.jobs.find((j) => j.id === id);
+    if (!prevJob) return;
+    const merged = { ...prevJob, ...updates };
+    setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? merged : j)) }));
+
+    const { error } = await supabase.from("jobs").update({
+      title: merged.title, company: merged.company, category: merged.category, location: merged.location,
+      job_type: merged.type, experience: merged.exp, salary_min: merged.salMin, salary_max: merged.salMax,
+      salary_unit: merged.salUnit, tags: merged.tags, description: merged.desc,
+    }).eq("id", id);
+    if (error) {
+      console.error("Failed to save job edits to Supabase:", error);
+      setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? prevJob : j)) })); // revert
+    }
+  };
+
   const markWhatsAppSent = (phones) => setDb((d) => ({
     ...d,
     applications: d.applications.map((a) => (phones.includes(a.phone) ? { ...a, whatsapp_last_sent: Date.now() } : a)),
@@ -913,11 +1049,10 @@ export default function App() {
 
       {view === "admin" && (
         adminAuthed
-          ? <AdminShell jobs={db.jobs} applications={db.applications} funnel={funnel} onCreate={createJob} onToggle={toggleJob} onWhatsAppSent={markWhatsAppSent} onExit={goHome} />
+          ? <AdminShell jobs={db.jobs} applications={db.applications} funnel={funnel} onCreate={createJob} onToggle={toggleJob} onUpdate={updateJob} onWhatsAppSent={markWhatsAppSent} onExit={goHome} loadingApps={loadingApps} />
           : <AdminGate onIn={() => setAdminAuthed(true)} />
       )}
 
-      <div className="sp-footer">© 2026 JobPulse · Internal proof-of-concept — not for public distribution</div>
     </div>
   );
 }
