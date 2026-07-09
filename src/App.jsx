@@ -1215,8 +1215,33 @@ export default function App() {
   // sandboxed preview (PostHog itself isn't reachable here).
   const bump = (key) => setFunnel((f) => ({ ...f, [key]: (f[key] || 0) + 1 }));
 
-  const goHome = () => { setView("candidate"); setPage("home"); setSelJob(null); };
-  const openJob = (j) => { setSelJob(j); setPage("jd"); bump("job_viewed"); window.scrollTo(0, 0); };
+  const goHome = () => {
+    setView("candidate"); setPage("home"); setSelJob(null);
+    if (typeof window !== "undefined") window.history.pushState({}, "", "/");
+  };
+  const openJob = (j) => {
+    setSelJob(j); setPage("jd"); bump("job_viewed"); window.scrollTo(0, 0);
+    // Keep the address bar in sync with whatever job is open — this is
+    // the URL you'd actually copy into an ad's destination link, same
+    // shape as the WhatsApp CTA link (jobLink() in AdminManageJobs).
+    if (typeof window !== "undefined") window.history.pushState({}, "", `/job/${j.id}`);
+  };
+
+  // Browser back/forward buttons should stay in sync with the URL above
+  // rather than leaving the app on a stale page while the address bar
+  // has already moved.
+  useEffect(() => {
+    const onPopState = () => {
+      const m = window.location.pathname.match(/\/job\/([^/]+)/);
+      if (m) {
+        const j = db.jobs.find((j) => j.id === decodeURIComponent(m[1]));
+        if (j) { setSelJob(j); setPage("jd"); return; }
+      }
+      setPage("home"); setSelJob(null);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [db.jobs]);
 
   const finishApply = async (data) => {
     const utm = getUTM();
@@ -1307,7 +1332,7 @@ export default function App() {
       {view === "candidate" && (
         <>
           {page === "home" && <Home jobs={db.jobs} applications={db.applications} onJob={openJob} loading={loadingJobs} />}
-          {page === "jd" && selJob && <JobDetail job={selJob} onBack={() => setPage("home")} onSuccess={finishApply} onStart={() => bump("apply_started")} />}
+          {page === "jd" && selJob && <JobDetail job={selJob} onBack={goHome} onSuccess={finishApply} onStart={() => bump("apply_started")} />}
           {page === "success" && successData && <Success data={successData} onHome={goHome} />}
         </>
       )}
