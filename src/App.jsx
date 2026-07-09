@@ -10,6 +10,10 @@ import Papa from "papaparse";
 
 const POSTHOG_API_KEY = "phc_AdNBNr4z2tTcRFqSAQM5XjJamQJjoEvEoFdBZftXhWYk";
 const POSTHOG_HOST = "https://us.i.posthog.com";
+// Pixel ID itself isn't secret (it's visible in every page's HTML/network
+// requests once live) — it's injected at build time via VITE_META_PIXEL_ID.
+// The CAPI access token is NOT here; it's a Supabase secret used only by
+// the meta-capi-on-apply edge function. See SETUP.md.
 const META_PIXEL_ID = import.meta.env.VITE_META_PIXEL_ID || "1221071876758000";
 // Supabase edge functions live on your Supabase project's own domain, not
 // your frontend's domain — these must be absolute URLs, not relative paths.
@@ -261,6 +265,46 @@ const WHATSAPP_TEMPLATES = [
   { id: "interview_invite", label: "Interview invite", preview: (name, job) => `Hi ${name}, good news — we'd like to invite you for an interview for the ${job} role. Please reply with your availability this week.` },
   { id: "document_request", label: "Document request", preview: (name, job) => `Hi ${name}, to move ahead with your application for ${job}, please share your updated CV and a valid ID proof at your earliest convenience.` },
   ];
+
+// Shared arbitrary-contact-list parsing — used anywhere an admin sends
+// WhatsApp to a list that ISN'T sourced from the applications table
+// (CSV upload here, and pasted numbers). Any header containing "name" /
+// "phone", "mobile", or "number" is auto-detected.
+function parseContactsCSV(file, onDone) {
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: (results) => {
+      const parsed = (results.data || [])
+        .map((row) => {
+          const keys = Object.keys(row);
+          const nameKey = keys.find((k) => k.toLowerCase().includes("name"));
+          const phoneKey = keys.find((k) => /phone|mobile|number/.test(k.toLowerCase()));
+          return {
+            name: (nameKey ? row[nameKey] : "")?.toString().trim() || "Candidate",
+            phone: (phoneKey ? row[phoneKey] : "")?.toString().trim() || "",
+          };
+        })
+        .filter((c) => c.phone);
+      onDone(parsed);
+    },
+  });
+}
+// Parses pasted freeform text, one contact per line: "Name, phone" or
+// just a bare phone number (name falls back to "Candidate").
+function parseContactsText(text) {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [first, second] = line.split(",").map((s) => s.trim());
+      const phone = (second || first || "").replace(/[^\d+]/g, "");
+      const name = second ? first : "Candidate";
+      return { name: name || "Candidate", phone };
+    })
+    .filter((c) => c.phone);
+}
 
 /* ════════════════════════════════════════════════════════════════════════
    MOCK DATA LAYER — swap for Supabase calls per SUPABASE SCHEMA comments
@@ -665,12 +709,15 @@ function AdminPostJob({ onCreate }) {
   );
 }
 
-function AdminManageJobs({ jobs, applications, onToggle, onUpdate, onWhatsAppSent }) {
+function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
   const [editingId, setEditingId] = useState(null);
   const [ef, setEf] = useState(null);
   const [promotingId, setPromotingId] = useState(null);
-  const [selected, setSelected] = useState(new Set());
+  const [contacts, setContacts] = useState([]);
+  const [fileName, setFileName] = useState("");
+  const [pasted, setPasted] = useState("");
   const [sending, setSending] = useState(false);
+  const [progress, setProgress] = useState({ sent: 0, failed: 0 });
 
   const startEdit = (job) => {
     setEditingId(job.id);
@@ -695,36 +742,32 @@ function AdminManageJobs({ jobs, applications, onToggle, onUpdate, onWhatsAppSen
     cancelEdit();
   };
 
-  // Dedupe the pool by phone number — the same candidate may have applied
-  // to multiple jobs, and this is a broadcast to *people*, not applications.
-  const pool = useMemo(() => {
-    const seen = new Map();
-    for (const a of applications) if (!seen.has(a.phone)) seen.set(a.phone, a);
-    return Array.from(seen.values());
-  }, [applications]);
+  const startPromote = (jobId) => { setPromotingId(jobId); setContacts([]); setFileName(""); setPasted(""); setProgress({ sent: 0, failed: 0 }); };
+  const cancelPromote = () => { setPromotingId(null); setContacts([]); setFileName(""); setPasted(""); };
 
-  const startPromote = (jobId) => { setPromotingId(jobId); setSelected(new Set()); };
-  const cancelPromote = () => { setPromotingId(null); setSelected(new Set()); };
-  const toggleCandidate = (phone) => setSelected((s) => {
-    const next = new Set(s);
-    next.has(phone) ? next.delete(phone) : next.add(phone);
-    return next;
-  });
-  const toggleAllCandidates = () => setSelected((s) => (s.size === pool.length ? new Set() : new Set(pool.map((a) => a.phone))));
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    parseContactsCSV(file, (parsed) => { setContacts(parsed); setProgress({ sent: 0, failed: 0 }); });
+  };
+  const applyPasted = () => {
+    setContacts(parseContactsText(pasted));
+    setProgress({ sent: 0, failed: 0 });
+  };
 
   const jobLink = (job) => `${typeof window !== "undefined" ? window.location.origin : ""}/job/${job.id}`;
 
   const sendPromotion = async (job) => {
-    if (selected.size === 0) return;
+    if (contacts.length === 0) return;
     setSending(true);
-    const link = jobLink(job);
-    const targets = pool.filter((a) => selected.has(a.phone));
-    for (const a of targets) {
-            await sendWhatsApp({ phone: a.phone, templateId: "job_promotion", params: { name: a.name, job_title: job.title, company: job.company, location: job.location, exp: job.exp || "Not specified", salary: fmtSalary(job), job_id: job.id } });
+    setProgress({ sent: 0, failed: 0 });
+    for (const c of contacts) {
+      const ok = await sendWhatsApp({ phone: c.phone, templateId: "job_promotion", params: { name: c.name, job_title: job.title, company: job.company, location: job.location, exp: job.exp || "Not specified", salary: fmtSalary(job), job_id: job.id } });
+      setProgress((p) => (ok ? { ...p, sent: p.sent + 1 } : { ...p, failed: p.failed + 1 }));
     }
-    onWhatsAppSent(targets.map((a) => a.phone));
+    onWhatsAppSent(contacts.map((c) => c.phone));
     setSending(false);
-    cancelPromote();
   };
 
   return (
@@ -778,39 +821,54 @@ function AdminManageJobs({ jobs, applications, onToggle, onUpdate, onWhatsAppSen
                       <label>Job link (this is the CTA candidates will tap)</label>
                       <input readOnly value={jobLink(j)} onClick={(e) => e.target.select()} />
                     </div>
-                                        <div className="sp-wa-preview">"{WHATSAPP_TEMPLATES.find((t) => t.id === "job_promotion").preview("Candidate Name", j.title, j.company, j.location, j.exp || "Not specified", fmtSalary(j))}"</div>
-                    {pool.length === 0 ? (
-                      <p style={{ color: "var(--slate)" }}>No candidates in your pool yet — this fills up as people apply to any job.</p>
-                    ) : (
-                      <>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <input type="checkbox" checked={selected.size === pool.length} onChange={toggleAllCandidates} />
-                          <span style={{ fontSize: 13, color: "var(--slate)" }}>Select all ({pool.length} candidates in pool)</span>
-                        </div>
-                        <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 9, marginBottom: 14 }}>
-                          <table className="sp-table">
-                            <tbody>
-                              {pool.map((a) => (
-                                <tr key={a.phone}>
-                                  <td style={{ width: 30 }}><input type="checkbox" checked={selected.has(a.phone)} onChange={() => toggleCandidate(a.phone)} /></td>
-                                  <td>{a.name}</td>
-                                  <td>{a.phone}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
+                    <div className="sp-wa-preview">"{WHATSAPP_TEMPLATES.find((t) => t.id === "job_promotion").preview("Candidate Name", j.title, j.company, j.location, j.exp || "Not specified", fmtSalary(j))}"</div>
+
+                    <p style={{ color: "var(--slate)", fontSize: 13.5, marginTop: 0 }}>
+                      Send to any list — upload a CSV or paste numbers below. Only message people who've agreed to be contacted this way.
+                    </p>
+
+                    <div className="sp-field-row">
+                      <div className="sp-field">
+                        <label>Upload CSV (name + phone columns, auto-detected)</label>
+                        <input type="file" accept=".csv" onChange={handleFile} />
+                        {fileName && <div style={{ fontSize: 12.5, color: "var(--slate)", marginTop: 6 }}>{contacts.length} contact{contacts.length === 1 ? "" : "s"} loaded from {fileName}</div>}
+                      </div>
+                      <div className="sp-field">
+                        <label>...or paste numbers (one per line: "Name, phone" or just phone)</label>
+                        <textarea rows={3} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder={"Priya Sharma, 9876543210\n9123456780"} />
+                        <button className="sp-mini-btn" style={{ marginTop: 6 }} onClick={applyPasted} disabled={!pasted.trim()}>Load pasted numbers</button>
+                      </div>
+                    </div>
+
+                    {contacts.length > 0 && (
+                      <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 9, margin: "10px 0 14px" }}>
+                        <table className="sp-table">
+                          <thead><tr><th>Name</th><th>Phone</th></tr></thead>
+                          <tbody>
+                            {contacts.map((c, i) => (
+                              <tr key={i}>
+                                <td>{c.name}</td>
+                                <td>{c.phone}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button className="sp-submit" style={{ width: "auto", padding: "10px 18px", marginTop: 0 }} disabled={selected.size === 0 || sending} onClick={() => sendPromotion(j)}>
-                        {sending ? "Sending…" : `Send to selected (${selected.size})`}
+
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <button className="sp-submit" style={{ width: "auto", padding: "10px 18px", marginTop: 0 }} disabled={contacts.length === 0 || sending} onClick={() => sendPromotion(j)}>
+                        {sending ? `Sending… (${progress.sent + progress.failed}/${contacts.length})` : `Send to ${contacts.length} contact${contacts.length === 1 ? "" : "s"}`}
                       </button>
                       <button className="sp-mini-btn" onClick={cancelPromote}>Cancel</button>
+                      {!sending && (progress.sent > 0 || progress.failed > 0) && (
+                        <span style={{ fontSize: 13, color: "var(--slate)" }}>Sent: {progress.sent} · Failed: {progress.failed}</span>
+                      )}
                     </div>
                   </div>
                 </td>
               </tr>
+
             ) : (
               <tr key={j.id}>
                 <td>{j.title}</td><td>{j.company}</td><td>{j.category}</td>
@@ -829,41 +887,27 @@ function AdminManageJobs({ jobs, applications, onToggle, onUpdate, onWhatsAppSen
   );
 }
 
-function AdminApplications({ applications, jobs, onWhatsAppSent, loading }) {
-  const [selected, setSelected] = useState(new Set());
-  const [templateId, setTemplateId] = useState(WHATSAPP_TEMPLATES[0].id);
-  const [sending, setSending] = useState(false);
-  const template = WHATSAPP_TEMPLATES.find((t) => t.id === templateId);
+// Applications tab: read-only view of who applied, where they came from
+// (utm_source), and a job-wise filter. WhatsApp sending was moved to the
+// Manage Jobs tab (promote a specific job posting to past applicants) —
+// it doesn't live here anymore.
+function AdminApplications({ applications, jobs, loading }) {
+  const [jobFilter, setJobFilter] = useState("all");
   const jobTitle = (id) => jobs.find((j) => j.id === id)?.title || id;
 
-  const toggle = (phone) => setSelected((s) => {
-    const next = new Set(s);
-    next.has(phone) ? next.delete(phone) : next.add(phone);
-    return next;
-  });
-  const toggleAll = () => setSelected((s) => (s.size === applications.length ? new Set() : new Set(applications.map((a) => a.phone))));
+  const filtered = jobFilter === "all" ? applications : applications.filter((a) => a.job_id === jobFilter);
 
-  const sendToSelected = async () => {
-    if (selected.size === 0) return;
-    setSending(true);
-    const targets = applications.filter((a) => selected.has(a.phone));
-    for (const a of targets) {
-      await sendWhatsApp({ phone: a.phone, templateId, params: { name: a.name, job_title: jobTitle(a.job_id) } });
-    }
-    onWhatsAppSent(targets.map((a) => a.phone));
-    setSelected(new Set());
-    setSending(false);
-  };
-
-  const sendOne = async (a) => {
-    await sendWhatsApp({ phone: a.phone, templateId, params: { name: a.name, job_title: jobTitle(a.job_id) } });
-    onWhatsAppSent([a.phone]);
-  };
+  // Job-wise counts for the dropdown labels, e.g. "Frontend Engineer (12)"
+  const countsByJob = useMemo(() => {
+    const m = new Map();
+    for (const a of applications) m.set(a.job_id, (m.get(a.job_id) || 0) + 1);
+    return m;
+  }, [applications]);
 
   const exportCSV = () => {
     const rows = [
       ["Name", "Phone", "Email", "Job", "Notice Period", "Current Salary", "CV", "Source", "Applied At"],
-      ...applications.map((a) => [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_file_name || "—", a.utm_source, new Date(a.at).toLocaleString()]),
+      ...filtered.map((a) => [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_file_name || "—", a.utm_source, new Date(a.at).toLocaleString()]),
     ];
     const csv = rows.map((r) => r.map((c) => `"${c ?? ""}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -874,56 +918,48 @@ function AdminApplications({ applications, jobs, onWhatsAppSent, loading }) {
 
   return (
     <div className="sp-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <h3 style={{ marginTop: 0 }}>Applications ({applications.length})</h3>
-        <button className="sp-mini-btn" onClick={exportCSV}>Export CSV</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
+        <h3 style={{ marginTop: 0 }}>
+          Applications ({filtered.length}{jobFilter !== "all" ? ` of ${applications.length}` : ""})
+        </h3>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <select value={jobFilter} onChange={(e) => setJobFilter(e.target.value)}>
+            <option value="all">All jobs ({applications.length})</option>
+            {jobs.map((j) => (
+              <option key={j.id} value={j.id}>{j.title} ({countsByJob.get(j.id) || 0})</option>
+            ))}
+          </select>
+          <button className="sp-mini-btn" onClick={exportCSV}>Export CSV</button>
+        </div>
       </div>
 
       {loading ? (
         <p style={{ color: "var(--slate)" }}>Loading applications…</p>
       ) : applications.length === 0 ? (
         <p style={{ color: "var(--slate)" }}>No applications yet — try applying to a job from the candidate view.</p>
+      ) : filtered.length === 0 ? (
+        <p style={{ color: "var(--slate)" }}>No applications for this job yet.</p>
       ) : (
-        <>
-          <div className="sp-wa-bar">
-            <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-              {WHATSAPP_TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
-            <button className="sp-submit" style={{ width: "auto", padding: "10px 18px", marginTop: 0 }} disabled={selected.size === 0 || sending} onClick={sendToSelected}>
-              {sending ? "Sending…" : `Send WhatsApp to selected (${selected.size})`}
-            </button>
-          </div>
-          <div className="sp-wa-preview">"{template.preview("Candidate Name", "Job Title")}"</div>
-
-          <table className="sp-table">
-            <thead>
-              <tr>
-                <th><input type="checkbox" checked={selected.size === applications.length} onChange={toggleAll} /></th>
-                <th>Name</th><th>Phone</th><th>Job</th><th>Notice</th><th>Salary</th><th>CV</th><th>WhatsApp</th>
+        <table className="sp-table">
+          <thead>
+            <tr>
+              <th>Name</th><th>Phone</th><th>Job</th><th>Notice</th><th>Salary</th><th>CV</th><th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((a, i) => (
+              <tr key={i}>
+                <td>{a.name}</td>
+                <td>{a.phone}</td>
+                <td>{jobTitle(a.job_id)}</td>
+                <td>{a.notice_period || "—"}</td>
+                <td>{a.current_salary || "—"}</td>
+                <td>{a.cv_file_name || "—"}</td>
+                <td>{a.utm_source || "direct"}</td>
               </tr>
-            </thead>
-            <tbody>
-              {applications.map((a, i) => (
-                <tr key={i}>
-                  <td><input type="checkbox" checked={selected.has(a.phone)} onChange={() => toggle(a.phone)} /></td>
-                  <td>{a.name}</td>
-                  <td>{a.phone}</td>
-                  <td>{jobTitle(a.job_id)}</td>
-                  <td>{a.notice_period || "—"}</td>
-                  <td>{a.current_salary || "—"}</td>
-                  <td>{a.cv_file_name || "—"}</td>
-                  <td>
-                    {a.whatsapp_last_sent ? (
-                      <span style={{ fontSize: 12, color: "var(--slate)" }}>Sent {new Date(a.whatsapp_last_sent).toLocaleDateString()}</span>
-                    ) : (
-                      <button className="sp-mini-btn" onClick={() => sendOne(a)}>Send</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
@@ -1068,8 +1104,8 @@ function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, 
         ))}
       </div>
       {tab === "post" && <AdminPostJob onCreate={onCreate} />}
-      {tab === "manage" && <AdminManageJobs jobs={jobs} applications={applications} onToggle={onToggle} onUpdate={onUpdate} onWhatsAppSent={onWhatsAppSent} />}
-      {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} onWhatsAppSent={onWhatsAppSent} loading={loadingApps} />}
+      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} onUpdate={onUpdate} onWhatsAppSent={onWhatsAppSent} />}
+      {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} loading={loadingApps} />}
       {tab === "campaign" && <AdminCampaign jobs={jobs} />}
       {tab === "analytics" && <AdminAnalytics jobs={jobs} applications={applications} funnel={funnel} />}
     </div>
