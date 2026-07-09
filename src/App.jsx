@@ -363,7 +363,7 @@ function dbRowToApplication(row) {
     email: row.email,
     notice_period: row.notice_period,
     current_salary: row.current_salary,
-    cv_file_name: row.cv_url,
+    cv_url: row.cv_url,
     job_id: row.job_id,
     at: new Date(row.created_at).getTime(),
     whatsapp_last_sent: row.whatsapp_last_sent_at ? new Date(row.whatsapp_last_sent_at).getTime() : null,
@@ -508,7 +508,7 @@ function Home({ jobs, applications, onJob, loading }) {
    CANDIDATE: JOB DETAIL
    ════════════════════════════════════════════════════════════════════════ */
 function JobDetail({ job, onBack, onSuccess, onStart }) {
-  const [f, setF] = useState({ name: "", phone: "", email: "", noticePeriod: "Immediate", currentSalary: "", cvFile: null });
+  const [f, setF] = useState({ name: "", phone: "", email: "", noticePeriod: "", currentSalary: "", cvFile: null });
   const [submitting, setSubmitting] = useState(false);
   const startedRef = useRef(false);
   const formRef = useRef(null);
@@ -535,9 +535,27 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!f.name || !f.phone || !f.email) return;
+    // Browser-native required/pattern validation (below, on the inputs
+    // themselves) already blocks submission before this runs — this is
+    // just a second guard so nothing slips through.
+    const phone = f.phone.replace(/\D/g, "");
+    if (!f.name || !/^[6-9]\d{9}$/.test(phone) || !f.email || !f.noticePeriod || !f.currentSalary || !f.cvFile) return;
     setSubmitting(true);
     const eventId = uid(); // shared between browser Pixel + server CAPI for dedup
+
+    // CV upload to Supabase Storage — needs a public `resumes` bucket
+    // (see SETUP.md). Runs before the DB insert so cv_url on the
+    // applications row is a real, clickable link from the start, not a
+    // filename to be resolved later.
+    let cvUrl = null;
+    const ext = f.cvFile.name.split(".").pop();
+    const path = `${uid()}.${ext}`;
+    const { error: cvErr } = await supabase.storage.from("resumes").upload(path, f.cvFile);
+    if (cvErr) {
+      console.error("CV upload failed:", cvErr);
+    } else {
+      cvUrl = supabase.storage.from("resumes").getPublicUrl(path).data.publicUrl;
+    }
 
     // 1. PostHog — product/funnel analytics
     trackPH("apply_completed", { job_id: job.id, job_title: job.title, company: job.company, category: job.category, name: f.name, email: f.email, notice_period: f.noticePeriod });
@@ -552,21 +570,13 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
       event_id: eventId,
       event_name: "Lead",
       email: f.email,
-      phone: f.phone,
+      phone,
       job_id: job.id,
       job_title: job.title,
       ...getUTM(),
     });
 
-    // 4. CV upload — in this preview the file is only held in memory.
-    //    In production, upload f.cvFile to Supabase Storage (e.g. a
-    //    `resumes` bucket) and store the resulting path on the
-    //    applications row as cv_url. See setup-guide.md.
-    if (f.cvFile) {
-      console.log("[CV upload stub — wire to Supabase Storage]", f.cvFile.name);
-    }
-
-    onSuccess({ name: f.name, phone: f.phone, email: f.email, noticePeriod: f.noticePeriod, currentSalary: f.currentSalary, cvFileName: f.cvFile?.name || null, job });
+    onSuccess({ name: f.name, phone, email: f.email, noticePeriod: f.noticePeriod, currentSalary: f.currentSalary, cvUrl, job });
     setSubmitting(false);
   };
 
@@ -598,20 +608,24 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
         <form onSubmit={submit} onFocus={markStarted}>
           <div className="sp-field"><label>Full name</label><input required value={f.name} onChange={set("name")} placeholder="Your full name" /></div>
           <div className="sp-field-row">
-            <div className="sp-field"><label>Phone number</label><input required value={f.phone} onChange={set("phone")} placeholder="10-digit mobile" /></div>
+            <div className="sp-field">
+              <label>Phone number</label>
+              <input required value={f.phone} onChange={set("phone")} placeholder="10-digit mobile" pattern="[6-9]\d{9}" title="Enter a valid 10-digit mobile number" />
+            </div>
             <div className="sp-field"><label>Email</label><input required type="email" value={f.email} onChange={set("email")} placeholder="you@example.com" /></div>
           </div>
           <div className="sp-field-row">
             <div className="sp-field"><label>Notice period</label>
-              <select value={f.noticePeriod} onChange={set("noticePeriod")}>
+              <select required value={f.noticePeriod} onChange={set("noticePeriod")}>
+                <option value="" disabled>Select notice period</option>
                 <option>Immediate</option><option>15 days</option><option>30 days</option><option>60 days</option><option>90+ days</option>
               </select>
             </div>
-            <div className="sp-field"><label>Current salary</label><input value={f.currentSalary} onChange={set("currentSalary")} placeholder="e.g. 18000 or 4.5 LPA" /></div>
+            <div className="sp-field"><label>Current salary</label><input required value={f.currentSalary} onChange={set("currentSalary")} placeholder="e.g. 18000 or 4.5 LPA" /></div>
           </div>
           <div className="sp-field">
-            <label>CV / Resume</label>
-            <input type="file" accept=".pdf,.doc,.docx" onChange={setFile} />
+            <label>CV / Resume (required)</label>
+            <input required type="file" accept=".pdf,.doc,.docx" onChange={setFile} />
           </div>
           <button className="sp-submit" disabled={submitting}>{submitting ? "Submitting…" : "Submit application"}</button>
           <div className="sp-consent">By applying, you agree to be contacted by JobPulse and {job.company} about this and similar roles via call, SMS, WhatsApp or email.</div>
@@ -906,8 +920,8 @@ function AdminApplications({ applications, jobs, loading }) {
 
   const exportCSV = () => {
     const rows = [
-      ["Name", "Phone", "Email", "Job", "Notice Period", "Current Salary", "CV", "Source", "Applied At"],
-      ...filtered.map((a) => [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_file_name || "—", a.utm_source, new Date(a.at).toLocaleString()]),
+      ["Name", "Phone", "Email", "Job", "Notice Period", "Current Salary", "CV Link", "Source", "Applied At"],
+      ...filtered.map((a) => [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_url || "—", a.utm_source, new Date(a.at).toLocaleString()]),
     ];
     const csv = rows.map((r) => r.map((c) => `"${c ?? ""}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -954,7 +968,7 @@ function AdminApplications({ applications, jobs, loading }) {
                 <td>{jobTitle(a.job_id)}</td>
                 <td>{a.notice_period || "—"}</td>
                 <td>{a.current_salary || "—"}</td>
-                <td>{a.cv_file_name || "—"}</td>
+                <td>{a.cv_url ? <a href={a.cv_url} target="_blank" rel="noopener noreferrer">View CV</a> : "—"}</td>
                 <td>{a.utm_source || "direct"}</td>
               </tr>
             ))}
@@ -1209,7 +1223,7 @@ export default function App() {
     const record = {
       name: data.name, phone: data.phone, email: data.email,
       notice_period: data.noticePeriod, current_salary: data.currentSalary,
-      cv_file_name: data.cvFileName, job_id: data.job.id, at: Date.now(),
+      cv_url: data.cvUrl, job_id: data.job.id, at: Date.now(),
       whatsapp_last_sent: null,
       ...utm,
     };
@@ -1228,7 +1242,7 @@ export default function App() {
       email: data.email,
       notice_period: data.noticePeriod,
       current_salary: data.currentSalary,
-      cv_url: data.cvFileName || null, // filename only for now — real file upload needs Supabase Storage, see setup-guide.md
+      cv_url: data.cvUrl, // real public Supabase Storage URL — see JobDetail's submit()
       utm_source: utm.utm_source,
       utm_medium: utm.utm_medium,
       utm_campaign: utm.utm_campaign,
