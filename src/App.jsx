@@ -10,7 +10,7 @@ import Papa from "papaparse";
 
 const POSTHOG_API_KEY = "phc_AdNBNr4z2tTcRFqSAQM5XjJamQJjoEvEoFdBZftXhWYk";
 const POSTHOG_HOST = "https://us.i.posthog.com";
-const META_PIXEL_ID = "YOUR_META_PIXEL_ID";
+const META_PIXEL_ID = import.meta.env.VITE_META_PIXEL_ID || "1221071876758000";
 // Supabase edge functions live on your Supabase project's own domain, not
 // your frontend's domain — these must be absolute URLs, not relative paths.
 // They also require the anon key on every call (Supabase's own auth layer,
