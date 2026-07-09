@@ -231,11 +231,17 @@ function trackMeta(event, props = {}, eventId) {
 // deployed Supabase Edge Function from the setup guide.
 async function sendServerConversion(payload) {
   try {
-    await fetch(SERVER_CAPI_ENDPOINT, {
+    const resp = await fetch(SERVER_CAPI_ENDPOINT, {
       method: "POST",
       headers: EDGE_FN_HEADERS,
       body: JSON.stringify(payload),
     });
+    // fetch() only throws on network-level failures (DNS, CORS block) —
+    // an HTTP error status from the function itself (bad token, wrong
+    // pixel ID, etc.) would silently succeed past a bare await otherwise.
+    if (!resp.ok) {
+      console.error("[Server CAPI] non-OK response:", resp.status, await resp.text());
+    }
   } catch (e) {
     console.log("[Server CAPI stub — wire up edge function]", payload);
   }
