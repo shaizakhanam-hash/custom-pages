@@ -554,6 +554,8 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const setFile = (e) => setF({ ...f, cvFile: e.target.files?.[0] || null });
 
+  const [cvError, setCvError] = useState("");
+
   const submit = async (e) => {
     e.preventDefault();
     // Browser-native required/pattern validation (below, on the inputs
@@ -562,22 +564,27 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
     const phone = f.phone.replace(/\D/g, "");
     const salaryIsNumber = f.currentSalary !== "" && !isNaN(Number(f.currentSalary)) && Number(f.currentSalary) >= 0;
     if (!f.name || !/^[6-9]\d{9}$/.test(phone) || !f.email || !f.noticePeriod || !salaryIsNumber || !f.cvFile) return;
+    setCvError("");
     setSubmitting(true);
     const eventId = uid(); // shared between browser Pixel + server CAPI for dedup
 
     // CV upload to Supabase Storage — needs a public `resumes` bucket
     // (see SETUP.md). Runs before the DB insert so cv_url on the
     // applications row is a real, clickable link from the start, not a
-    // filename to be resolved later.
-    let cvUrl = null;
+    // filename to be resolved later. Uploading successfully is a hard
+    // requirement, not best-effort — if this fails (missing bucket, RLS
+    // policy, network blip), we stop here rather than letting an
+    // application through with no CV attached to it.
     const ext = f.cvFile.name.split(".").pop();
     const path = `${uid()}.${ext}`;
     const { error: cvErr } = await supabase.storage.from("resumes").upload(path, f.cvFile);
     if (cvErr) {
       console.error("CV upload failed:", cvErr);
-    } else {
-      cvUrl = supabase.storage.from("resumes").getPublicUrl(path).data.publicUrl;
+      setCvError("We couldn't upload your CV — please check the file and try again.");
+      setSubmitting(false);
+      return;
     }
+    const cvUrl = supabase.storage.from("resumes").getPublicUrl(path).data.publicUrl;
 
     // 1. PostHog — product/funnel analytics
     trackPH("apply_completed", { job_id: job.id, job_title: job.title, company: job.company, category: job.category, name: f.name, email: f.email, notice_period: f.noticePeriod });
@@ -669,7 +676,8 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
           </div>
           <div className="sp-field">
             <label>CV / Resume (required)</label>
-            <input required type="file" accept=".pdf,.doc,.docx" onChange={setFile} />
+            <input required type="file" accept=".pdf,.doc,.docx" onChange={(e) => { setFile(e); setCvError(""); }} />
+            {cvError && <div style={{ color: "#DC2626", fontSize: 13, marginTop: 6 }}>{cvError}</div>}
           </div>
           <button className="sp-submit" disabled={submitting}>{submitting ? "Submitting…" : "Submit application"}</button>
           <div className="sp-consent">By applying, you agree to be contacted by JobPulse and {job.company} about this and similar roles via call, SMS, WhatsApp or email.</div>
