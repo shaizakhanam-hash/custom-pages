@@ -165,8 +165,6 @@ input,select,textarea{font-family:inherit;}
 .sp-kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;}
 .sp-kpi-val{font-family:'IBM Plex Mono';font-size:26px;font-weight:600;}
 .sp-kpi-label{font-size:12.5px;color:var(--slate);margin-top:4px;}
-.sp-utm-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;}
-@media(max-width:760px){.sp-utm-cols{grid-template-columns:1fr;}}
 .sp-utm-row{margin-bottom:10px;}
 .sp-utm-row-top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;}
 .sp-utm-row-label{color:var(--ink);font-weight:500;}
@@ -981,27 +979,6 @@ function utmBreakdown(list, key, emptyLabel) {
     .sort((a, b) => b.count - a.count);
 }
 
-function UTMBreakdownColumn({ title, rows }) {
-  return (
-    <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>{title}</div>
-      {rows.length === 0 ? (
-        <p style={{ color: "var(--slate)", fontSize: 13 }}>No data.</p>
-      ) : (
-        rows.map((r) => (
-          <div className="sp-utm-row" key={r.value}>
-            <div className="sp-utm-row-top">
-              <span className="sp-utm-row-label">{r.value}</span>
-              <span className="sp-utm-row-count">{r.count} · {r.pct}%</span>
-            </div>
-            <div className="sp-utm-bar-track"><div className="sp-utm-bar-fill" style={{ width: `${r.pct}%` }} /></div>
-          </div>
-        ))
-      )}
-    </div>
-  );
-}
-
 function AdminApplications({ applications, jobs, loading }) {
   const [jobFilter, setJobFilter] = useState("all");
   const jobTitle = (id) => jobs.find((j) => j.id === id)?.title || id;
@@ -1018,8 +995,6 @@ function AdminApplications({ applications, jobs, loading }) {
   // Recomputes automatically whenever jobFilter changes, since it's
   // derived from `filtered` — same total view, or narrowed to one job.
   const sourceBreakdown = useMemo(() => utmBreakdown(filtered, "utm_source", "direct"), [filtered]);
-  const mediumBreakdown = useMemo(() => utmBreakdown(filtered, "utm_medium", "—"), [filtered]);
-  const campaignBreakdown = useMemo(() => utmBreakdown(filtered, "utm_campaign", "—"), [filtered]);
 
   const exportCSV = () => {
     const rows = [
@@ -1042,10 +1017,16 @@ function AdminApplications({ applications, jobs, loading }) {
         {filtered.length === 0 ? (
           <p style={{ color: "var(--slate)" }}>No applications to break down yet.</p>
         ) : (
-          <div className="sp-utm-cols">
-            <UTMBreakdownColumn title="Source" rows={sourceBreakdown} />
-            <UTMBreakdownColumn title="Medium" rows={mediumBreakdown} />
-            <UTMBreakdownColumn title="Campaign" rows={campaignBreakdown} />
+          <div style={{ maxWidth: 420 }}>
+            {sourceBreakdown.map((r) => (
+              <div className="sp-utm-row" key={r.value}>
+                <div className="sp-utm-row-top">
+                  <span className="sp-utm-row-label">{r.value}</span>
+                  <span className="sp-utm-row-count">{r.count} · {r.pct}%</span>
+                </div>
+                <div className="sp-utm-bar-track"><div className="sp-utm-bar-fill" style={{ width: `${r.pct}%` }} /></div>
+              </div>
+            ))}
           </div>
         )}
       </div>
