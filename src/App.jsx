@@ -165,6 +165,14 @@ input,select,textarea{font-family:inherit;}
 .sp-kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;}
 .sp-kpi-val{font-family:'IBM Plex Mono';font-size:26px;font-weight:600;}
 .sp-kpi-label{font-size:12.5px;color:var(--slate);margin-top:4px;}
+.sp-utm-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;}
+@media(max-width:760px){.sp-utm-cols{grid-template-columns:1fr;}}
+.sp-utm-row{margin-bottom:10px;}
+.sp-utm-row-top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;}
+.sp-utm-row-label{color:var(--ink);font-weight:500;}
+.sp-utm-row-count{color:var(--slate);font-family:'IBM Plex Mono';}
+.sp-utm-bar-track{background:#F1F5F9;border-radius:6px;height:7px;overflow:hidden;}
+.sp-utm-bar-fill{background:var(--signal);height:100%;border-radius:6px;}
 .sp-table{width:100%;border-collapse:collapse;font-size:13.5px;}
 .sp-table th{text-align:left;padding:10px 12px;color:var(--slate);font-weight:600;border-bottom:1px solid var(--line);font-size:12px;text-transform:uppercase;letter-spacing:.04em;}
 .sp-table td{padding:11px 12px;border-bottom:1px solid var(--line);}
@@ -956,6 +964,44 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
 // (utm_source), and a job-wise filter. WhatsApp sending was moved to the
 // Manage Jobs tab (promote a specific job posting to past applicants) —
 // it doesn't live here anymore.
+// Groups a list of applications by a UTM field and returns counts sorted
+// descending, each with its % share — used for the Source/Medium/Campaign
+// breakdown panel. Missing values bucket as "direct" (Source only) or
+// "—" (Medium/Campaign), since a blank utm_source specifically means the
+// candidate arrived with no campaign params at all, i.e. direct traffic.
+function utmBreakdown(list, key, emptyLabel) {
+  const counts = new Map();
+  for (const a of list) {
+    const v = (a[key] || emptyLabel);
+    counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  const total = list.length || 1;
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ value, count, pct: Math.round((count / total) * 100) }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function UTMBreakdownColumn({ title, rows }) {
+  return (
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>{title}</div>
+      {rows.length === 0 ? (
+        <p style={{ color: "var(--slate)", fontSize: 13 }}>No data.</p>
+      ) : (
+        rows.map((r) => (
+          <div className="sp-utm-row" key={r.value}>
+            <div className="sp-utm-row-top">
+              <span className="sp-utm-row-label">{r.value}</span>
+              <span className="sp-utm-row-count">{r.count} · {r.pct}%</span>
+            </div>
+            <div className="sp-utm-bar-track"><div className="sp-utm-bar-fill" style={{ width: `${r.pct}%` }} /></div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function AdminApplications({ applications, jobs, loading }) {
   const [jobFilter, setJobFilter] = useState("all");
   const jobTitle = (id) => jobs.find((j) => j.id === id)?.title || id;
@@ -968,6 +1014,12 @@ function AdminApplications({ applications, jobs, loading }) {
     for (const a of applications) m.set(a.job_id, (m.get(a.job_id) || 0) + 1);
     return m;
   }, [applications]);
+
+  // Recomputes automatically whenever jobFilter changes, since it's
+  // derived from `filtered` — same total view, or narrowed to one job.
+  const sourceBreakdown = useMemo(() => utmBreakdown(filtered, "utm_source", "direct"), [filtered]);
+  const mediumBreakdown = useMemo(() => utmBreakdown(filtered, "utm_medium", "—"), [filtered]);
+  const campaignBreakdown = useMemo(() => utmBreakdown(filtered, "utm_campaign", "—"), [filtered]);
 
   const exportCSV = () => {
     const rows = [
@@ -982,6 +1034,22 @@ function AdminApplications({ applications, jobs, loading }) {
   };
 
   return (
+    <div>
+      <div className="sp-card" style={{ marginBottom: 20 }}>
+        <h3 style={{ marginTop: 0 }}>
+          Traffic source breakdown {jobFilter !== "all" ? `— ${jobTitle(jobFilter)}` : "— all jobs"} ({filtered.length})
+        </h3>
+        {filtered.length === 0 ? (
+          <p style={{ color: "var(--slate)" }}>No applications to break down yet.</p>
+        ) : (
+          <div className="sp-utm-cols">
+            <UTMBreakdownColumn title="Source" rows={sourceBreakdown} />
+            <UTMBreakdownColumn title="Medium" rows={mediumBreakdown} />
+            <UTMBreakdownColumn title="Campaign" rows={campaignBreakdown} />
+          </div>
+        )}
+      </div>
+
     <div className="sp-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
         <h3 style={{ marginTop: 0 }}>
@@ -1026,6 +1094,7 @@ function AdminApplications({ applications, jobs, loading }) {
           </tbody>
         </table>
       )}
+    </div>
     </div>
   );
 }
