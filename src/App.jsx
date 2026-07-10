@@ -342,6 +342,11 @@ function dbRowToJob(row) {
     salUnit: row.salary_unit || "month",
     tags: row.tags || [],
     desc: row.description || [],
+    // All optional JD sections — each renders as its own block on the job
+    // page only if it has content, instead of one giant merged bullet dump.
+    mustHave: row.must_have || [],
+    goodToHave: row.good_to_have || [],
+    education: row.education || [],
     active: row.active,
     postedAt: new Date(row.created_at).getTime(),
   };
@@ -359,7 +364,11 @@ function jobToDbRow(job) {
     salary_unit: job.salUnit,
     tags: job.tags,
     description: job.desc,
+    must_have: job.mustHave,
+    good_to_have: job.goodToHave,
+    education: job.education,
     active: job.active,
+
   };
 }
 function dbRowToApplication(row) {
@@ -545,7 +554,8 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
     // themselves) already blocks submission before this runs — this is
     // just a second guard so nothing slips through.
     const phone = f.phone.replace(/\D/g, "");
-    if (!f.name || !/^[6-9]\d{9}$/.test(phone) || !f.email || !f.noticePeriod || !f.currentSalary || !f.cvFile) return;
+    const salaryIsNumber = f.currentSalary !== "" && !isNaN(Number(f.currentSalary)) && Number(f.currentSalary) >= 0;
+    if (!f.name || !/^[6-9]\d{9}$/.test(phone) || !f.email || !f.noticePeriod || !salaryIsNumber || !f.cvFile) return;
     setSubmitting(true);
     const eventId = uid(); // shared between browser Pixel + server CAPI for dedup
 
@@ -599,14 +609,36 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
         </div>
         <button className="sp-jd-cta" onClick={scrollToForm}>Apply now</button>
       </div>
-      <div className="sp-jd-section">
-        <h3>What you'll do</h3>
-        <ul>{job.desc.map((d) => <li key={d}>{d}</li>)}</ul>
-      </div>
-      <div className="sp-jd-section">
-        <h3>Good to know</h3>
-        <ul>{job.tags.map((t) => <li key={t}>{t}</li>)}</ul>
-      </div>
+      {job.desc.length > 0 && (
+        <div className="sp-jd-section">
+          <h3>Key responsibilities</h3>
+          <ul>{job.desc.map((d) => <li key={d}>{d}</li>)}</ul>
+        </div>
+      )}
+      {job.mustHave?.length > 0 && (
+        <div className="sp-jd-section">
+          <h3>Must-have skills</h3>
+          <ul>{job.mustHave.map((d) => <li key={d}>{d}</li>)}</ul>
+        </div>
+      )}
+      {job.goodToHave?.length > 0 && (
+        <div className="sp-jd-section">
+          <h3>Good to have</h3>
+          <ul>{job.goodToHave.map((d) => <li key={d}>{d}</li>)}</ul>
+        </div>
+      )}
+      {job.education?.length > 0 && (
+        <div className="sp-jd-section">
+          <h3>Education</h3>
+          <ul>{job.education.map((d) => <li key={d}>{d}</li>)}</ul>
+        </div>
+      )}
+      {job.tags.length > 0 && (
+        <div className="sp-jd-section">
+          <h3>Good to know</h3>
+          <ul>{job.tags.map((t) => <li key={t}>{t}</li>)}</ul>
+        </div>
+      )}
 
       <div className="sp-form-card" ref={formRef}>
         <h3 style={{ marginTop: 0, fontSize: 19 }}>Apply for {job.title}</h3>
@@ -627,7 +659,7 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
                 <option>Immediate</option><option>15 days</option><option>30 days</option><option>60 days</option><option>90+ days</option>
               </select>
             </div>
-            <div className="sp-field"><label>Current salary</label><input required value={f.currentSalary} onChange={set("currentSalary")} placeholder="e.g. 18000 or 4.5 LPA" /></div>
+            <div className="sp-field"><label>Current salary (₹, monthly or annual figure)</label><input required type="number" min="0" step="0.01" inputMode="decimal" value={f.currentSalary} onChange={set("currentSalary")} placeholder="e.g. 18000" /></div>
           </div>
           <div className="sp-field">
             <label>CV / Resume (required)</label>
@@ -673,7 +705,7 @@ function AdminGate({ onIn }) {
 }
 
 function AdminPostJob({ onCreate }) {
-  const blank = { title: "", company: "", category: CATEGORIES[1], location: "", type: "Full-time", exp: "", salMin: "", salMax: "", salUnit: "month", tags: "", desc: "" };
+  const blank = { title: "", company: "", category: CATEGORIES[1], location: "", type: "Full-time", exp: "", salMin: "", salMax: "", salUnit: "month", tags: "", desc: "", mustHave: "", goodToHave: "", education: "" };
   const [f, setF] = useState(blank);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
@@ -687,6 +719,9 @@ function AdminPostJob({ onCreate }) {
       salMin: salaryInputToRupees(f.salMin, f.salUnit), salMax: salaryInputToRupees(f.salMax, f.salUnit), salUnit: f.salUnit,
       tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean),
       desc: f.desc.split("\n").map((d) => d.trim()).filter(Boolean),
+      mustHave: f.mustHave.split("\n").map((d) => d.trim()).filter(Boolean),
+      goodToHave: f.goodToHave.split("\n").map((d) => d.trim()).filter(Boolean),
+      education: f.education.split("\n").map((d) => d.trim()).filter(Boolean),
       active: true, postedAt: Date.now(),
     };
     onCreate(job);
@@ -722,7 +757,10 @@ function AdminPostJob({ onCreate }) {
           <select value={f.salUnit} onChange={set("salUnit")}><option value="month">Per month</option><option value="annum">Per annum</option></select>
         </div>
         <div className="sp-field"><label>Tags (comma separated)</label><input value={f.tags} onChange={set("tags")} placeholder="Walk-in interview, Freshers welcome" /></div>
-        <div className="sp-field"><label>Description (one bullet per line)</label><textarea rows={4} value={f.desc} onChange={set("desc")} /></div>
+        <div className="sp-field"><label>Key responsibilities (one bullet per line)</label><textarea rows={4} value={f.desc} onChange={set("desc")} /></div>
+        <div className="sp-field"><label>Must-have skills (optional, one per line)</label><textarea rows={3} value={f.mustHave} onChange={set("mustHave")} placeholder={"e.g. 3+ years Python\nExperience with LangChain"} /></div>
+        <div className="sp-field"><label>Good to have (optional, one per line)</label><textarea rows={3} value={f.goodToHave} onChange={set("goodToHave")} placeholder={"e.g. Exposure to LangGraph\nPrior startup experience"} /></div>
+        <div className="sp-field"><label>Education requirement (optional, one per line)</label><textarea rows={2} value={f.education} onChange={set("education")} placeholder={"e.g. Bachelor's in CS or related field"} /></div>
         <button className="sp-submit">Post job</button>
       </form>
     </div>
@@ -745,6 +783,7 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
       title: job.title, company: job.company, category: job.category, location: job.location,
       type: job.type, exp: job.exp, salMin: rupeesToSalaryInput(job.salMin, job.salUnit), salMax: rupeesToSalaryInput(job.salMax, job.salUnit), salUnit: job.salUnit,
       tags: job.tags.join(", "), desc: job.desc.join("\n"),
+      mustHave: (job.mustHave || []).join("\n"), goodToHave: (job.goodToHave || []).join("\n"), education: (job.education || []).join("\n"),
     });
   };
   const cancelEdit = () => { setEditingId(null); setEf(null); };
@@ -758,6 +797,9 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
       salMin: salaryInputToRupees(ef.salMin, ef.salUnit), salMax: salaryInputToRupees(ef.salMax, ef.salUnit), salUnit: ef.salUnit,
       tags: ef.tags.split(",").map((t) => t.trim()).filter(Boolean),
       desc: ef.desc.split("\n").map((d) => d.trim()).filter(Boolean),
+      mustHave: ef.mustHave.split("\n").map((d) => d.trim()).filter(Boolean),
+      goodToHave: ef.goodToHave.split("\n").map((d) => d.trim()).filter(Boolean),
+      education: ef.education.split("\n").map((d) => d.trim()).filter(Boolean),
     });
     cancelEdit();
   };
@@ -825,7 +867,10 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
                       <select value={ef.salUnit} onChange={set("salUnit")}><option value="month">Per month</option><option value="annum">Per annum</option></select>
                     </div>
                     <div className="sp-field"><label>Tags (comma separated)</label><input value={ef.tags} onChange={set("tags")} /></div>
-                    <div className="sp-field"><label>Description (one bullet per line)</label><textarea rows={4} value={ef.desc} onChange={set("desc")} /></div>
+                    <div className="sp-field"><label>Key responsibilities (one bullet per line)</label><textarea rows={4} value={ef.desc} onChange={set("desc")} /></div>
+                    <div className="sp-field"><label>Must-have skills (optional, one per line)</label><textarea rows={3} value={ef.mustHave} onChange={set("mustHave")} /></div>
+                    <div className="sp-field"><label>Good to have (optional, one per line)</label><textarea rows={3} value={ef.goodToHave} onChange={set("goodToHave")} /></div>
+                    <div className="sp-field"><label>Education requirement (optional, one per line)</label><textarea rows={2} value={ef.education} onChange={set("education")} /></div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button className="sp-submit" style={{ width: "auto", padding: "10px 18px", marginTop: 0 }} onClick={saveEdit}>Save changes</button>
                       <button className="sp-mini-btn" onClick={cancelEdit}>Cancel</button>
@@ -1318,6 +1363,7 @@ export default function App() {
       title: merged.title, company: merged.company, category: merged.category, location: merged.location,
       job_type: merged.type, experience: merged.exp, salary_min: merged.salMin, salary_max: merged.salMax,
       salary_unit: merged.salUnit, tags: merged.tags, description: merged.desc,
+      must_have: merged.mustHave, good_to_have: merged.goodToHave, education: merged.education,
     }).eq("id", id);
     if (error) {
       console.error("Failed to save job edits to Supabase:", error);
