@@ -22,7 +22,6 @@ const META_PIXEL_ID = import.meta.env.VITE_META_PIXEL_ID || "1221071876758000";
 // before your function code even runs.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const SERVER_CAPI_ENDPOINT = `${SUPABASE_URL}/functions/v1/meta-capi-on-apply`;
 const WHATSAPP_SEND_ENDPOINT = `${SUPABASE_URL}/functions/v1/whatsapp-send`;
 const ADMIN_DATA_ENDPOINT = `${SUPABASE_URL}/functions/v1/admin-get-applications`;
 const EDGE_FN_HEADERS = {
@@ -177,6 +176,13 @@ input,select,textarea{font-family:inherit;}
 .sp-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:100px;}
 .sp-badge.on{background:#E9F7F2;color:var(--pulse);}
 .sp-badge.off{background:#F1EEE6;color:var(--slate);}
+.sp-rel-badge{font-family:'IBM Plex Mono';font-size:12px;font-weight:600;padding:3px 9px;border-radius:100px;cursor:default;}
+.sp-rel-badge.high{background:#E9F7F2;color:var(--pulse);}
+.sp-rel-badge.mid{background:#FFF4E5;color:#B45309;}
+.sp-rel-badge.low{background:#FDECEC;color:var(--danger);}
+.sp-rel-badge.none{background:#F1EEE6;color:var(--slate);}
+.sp-th-sort{cursor:pointer;user-select:none;}
+.sp-th-sort:hover{color:var(--ink);}
 .sp-mini-btn{font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:#fff;}
 .sp-mini-btn:hover{border-color:var(--ink);}
 .sp-wa-bar{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
@@ -231,27 +237,11 @@ function trackMeta(event, props = {}, eventId) {
     }
   } catch (e) {}
 }
-// Server-side leg of the Meta Conversions API call. This is what actually
-// feeds Meta's matching/Lookalike system reliably (browser pixel alone is
-// degraded by iOS ATT + ad blockers). Wire SERVER_CAPI_ENDPOINT to the
-// deployed Supabase Edge Function from the setup guide.
-async function sendServerConversion(payload) {
-  try {
-    const resp = await fetch(SERVER_CAPI_ENDPOINT, {
-      method: "POST",
-      headers: EDGE_FN_HEADERS,
-      body: JSON.stringify(payload),
-    });
-    // fetch() only throws on network-level failures (DNS, CORS block) —
-    // an HTTP error status from the function itself (bad token, wrong
-    // pixel ID, etc.) would silently succeed past a bare await otherwise.
-    if (!resp.ok) {
-      console.error("[Server CAPI] non-OK response:", resp.status, await resp.text());
-    }
-  } catch (e) {
-    console.log("[Server CAPI stub — wire up edge function]", payload);
-  }
-}
+// The server-side Meta Conversions API leg now runs entirely through the
+// meta-capi-on-apply Supabase Database Webhook (triggered on applications
+// INSERT) rather than a direct call from the frontend — see the comment in
+// JobDetail.submit() and meta-capi-on-apply/index.ts for why.
+
 // WhatsApp Business Cloud API send, routed through a Supabase Edge
 // Function (WHATSAPP_SEND_ENDPOINT) so the access token never sits in
 // frontend code. WhatsApp requires business-initiated messages outside an
@@ -392,6 +382,13 @@ function dbRowToApplication(row) {
     utm_medium: row.utm_medium,
     utm_campaign: row.utm_campaign,
     fbclid: row.fbclid,
+    // Written by meta-capi-on-apply after it scores this application's CV
+    // against the job's JD — see relevance.ts. score is null until the
+    // webhook has run, or if nothing was scoreable (see relevanceDetail.reason).
+    relevanceScore: row.relevance_score ?? null,
+    relevanceDetail: row.relevance_detail ?? null,
+    capiSent: row.capi_sent ?? false,
+    capiSkipReason: row.capi_skip_reason ?? null,
   };
 }
 
@@ -592,20 +589,17 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
     // 2. Meta Pixel — browser-side conversion signal
     trackMeta("Lead", { content_name: job.title, content_category: job.category, value: 0, currency: "INR" }, eventId);
 
-    // 3. Server-side Meta Conversions API — reliable match, feeds Lookalike
-    //    Audiences ("similar candidates"). See meta-capi-on-apply edge
-    //    function + setup guide for the Ads Manager side of this.
-    await sendServerConversion({
-      event_id: eventId,
-      event_name: "Lead",
-      email: f.email,
-      phone,
-      job_id: job.id,
-      job_title: job.title,
-      ...getUTM(),
-    });
-
-    onSuccess({ name: f.name, phone, email: f.email, noticePeriod: f.noticePeriod, currentSalary: f.currentSalary, cvUrl, job });
+    // 3. Server-side Meta Conversions API now runs entirely off the
+    //    Supabase Database Webhook on `applications` INSERT (see
+    //    meta-capi-on-apply/index.ts) rather than a direct call from here.
+    //    That function looks up the job's JD, downloads + scores the CV
+    //    against it, and only fires the Lead event if the candidate clears
+    //    the relevance threshold — none of which a client-side fetch with
+    //    just the anon key can safely do. Calling it from both places would
+    //    also risk double-firing the same event_id. eventId still needs to
+    //    reach the DB row (below) so the webhook's Lead event can dedupe
+    //    against the browser Pixel call above.
+    onSuccess({ name: f.name, phone, email: f.email, noticePeriod: f.noticePeriod, currentSalary: f.currentSalary, cvUrl, job, eventId });
     setSubmitting(false);
   };
 
@@ -987,11 +981,55 @@ function utmBreakdown(list, key, emptyLabel) {
     .sort((a, b) => b.count - a.count);
 }
 
+// Score is null until the meta-capi-on-apply webhook has run (or if
+// nothing was scoreable for that application — see relevanceDetail.reason).
+function RelevanceBadge({ score, detail }) {
+  if (score === null || score === undefined) {
+    const reason = detail?.reason;
+    const label = reason === "resume_text_unavailable" ? "CV unreadable"
+      : reason === "job_has_no_scoreable_fields" ? "No JD to match"
+      : "Scoring…";
+    return <span className="sp-rel-badge none" title="Not yet scored, or nothing in the JD/CV was comparable">{label}</span>;
+  }
+  const tier = score >= 70 ? "high" : score >= 50 ? "mid" : "low";
+  // Build a short "why" tooltip out of whichever categories the engine
+  // actually had to work with (must_have, good_to_have, education, tags,
+  // or the description_fallback when every JD field was left blank).
+  const parts = [];
+  for (const key of ["must_have", "good_to_have", "education", "tags"]) {
+    const cat = detail?.[key];
+    if (cat) parts.push(`${key.replace("_", " ")}: ${cat.matched.length}/${cat.matched.length + cat.missed.length}`);
+  }
+  if (detail?.description_fallback) parts.push("matched against job description (no JD skills fields set)");
+  return <span className={`sp-rel-badge ${tier}`} title={parts.join(" · ") || "Relevance score"}>{score}</span>;
+}
+
 function AdminApplications({ applications, jobs, loading }) {
   const [jobFilter, setJobFilter] = useState("all");
+  const [sortBy, setSortBy] = useState(null); // null = applied-at order (default), or "relevance"
+  const [sortDir, setSortDir] = useState("desc");
   const jobTitle = (id) => jobs.find((j) => j.id === id)?.title || id;
 
   const filtered = jobFilter === "all" ? applications : applications.filter((a) => a.job_id === jobFilter);
+
+  const sorted = useMemo(() => {
+    if (sortBy !== "relevance") return filtered;
+    // Unscored (null) applications always sink to the bottom regardless of
+    // direction — an unscored candidate isn't "low relevance," it's just
+    // not measured yet, and burying real low scores under it would defeat
+    // the point of sorting by this column at all.
+    return [...filtered].sort((a, b) => {
+      if (a.relevanceScore === null && b.relevanceScore === null) return 0;
+      if (a.relevanceScore === null) return 1;
+      if (b.relevanceScore === null) return -1;
+      return sortDir === "desc" ? b.relevanceScore - a.relevanceScore : a.relevanceScore - b.relevanceScore;
+    });
+  }, [filtered, sortBy, sortDir]);
+
+  const toggleRelevanceSort = () => {
+    if (sortBy !== "relevance") { setSortBy("relevance"); setSortDir("desc"); }
+    else setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+  };
 
   // Job-wise counts for the dropdown labels, e.g. "Frontend Engineer (12)"
   const countsByJob = useMemo(() => {
@@ -1006,8 +1044,8 @@ function AdminApplications({ applications, jobs, loading }) {
 
   const exportCSV = () => {
     const rows = [
-      ["Name", "Phone", "Email", "Job", "Notice Period", "Current Salary", "CV Link", "Source", "Applied At"],
-      ...filtered.map((a) => [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_url || "—", a.utm_source, new Date(a.at).toLocaleString()]),
+      ["Name", "Phone", "Email", "Job", "Notice Period", "Current Salary", "CV Link", "Relevance Score", "Sent to Meta", "Source", "Applied At"],
+      ...sorted.map((a) => [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_url || "—", a.relevanceScore ?? "unscored", a.capiSent ? "yes" : "no", a.utm_source, new Date(a.at).toLocaleString()]),
     ];
     const csv = rows.map((r) => r.map((c) => `"${c ?? ""}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -1065,11 +1103,15 @@ function AdminApplications({ applications, jobs, loading }) {
         <table className="sp-table">
           <thead>
             <tr>
-              <th>Name</th><th>Phone</th><th>Job</th><th>Notice</th><th>Salary</th><th>CV</th><th>Source</th>
+              <th>Name</th><th>Phone</th><th>Job</th><th>Notice</th><th>Salary</th><th>CV</th>
+              <th className="sp-th-sort" onClick={toggleRelevanceSort}>
+                Relevance{sortBy === "relevance" ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
+              </th>
+              <th>Source</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((a, i) => (
+            {sorted.map((a, i) => (
               <tr key={i}>
                 <td>{a.name}</td>
                 <td>{a.phone}</td>
@@ -1077,6 +1119,7 @@ function AdminApplications({ applications, jobs, loading }) {
                 <td>{a.notice_period || "—"}</td>
                 <td>{a.current_salary || "—"}</td>
                 <td>{a.cv_url ? <a href={a.cv_url} target="_blank" rel="noopener noreferrer">View CV</a> : "—"}</td>
+                <td><RelevanceBadge score={a.relevanceScore} detail={a.relevanceDetail} /></td>
                 <td>{a.utm_source || "direct"}</td>
               </tr>
             ))}
@@ -1368,7 +1411,10 @@ export default function App() {
     setPage("success");
     window.scrollTo(0, 0);
 
-    // Persist to Supabase so it survives refreshes / other sessions.
+    // Persist to Supabase so it survives refreshes / other sessions. This
+    // insert is also what fires the meta-capi-on-apply Database Webhook —
+    // event_id has to be saved here (it wasn't before) so that function can
+    // dedupe its Lead event against the browser Pixel call above.
     const { error } = await supabase.from("applications").insert({
       job_id: data.job.id,
       name: data.name,
@@ -1377,6 +1423,7 @@ export default function App() {
       notice_period: data.noticePeriod,
       current_salary: data.currentSalary,
       cv_url: data.cvUrl, // real public Supabase Storage URL — see JobDetail's submit()
+      event_id: data.eventId,
       utm_source: utm.utm_source,
       utm_medium: utm.utm_medium,
       utm_campaign: utm.utm_campaign,
