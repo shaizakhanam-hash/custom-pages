@@ -127,6 +127,13 @@ input,select,textarea{font-family:inherit;}
 .sp-jd-cta{background:var(--signal);color:#fff;border:none;padding:15px 30px;border-radius:11px;font-weight:700;font-size:15.5px;width:100%;transition:.15s;}
 .sp-jd-cta:hover{background:var(--signal-dark);}
 .sp-jd-note{text-align:center;font-size:12.5px;color:var(--slate);margin-top:10px;}
+.sp-share{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line);flex-wrap:wrap;}
+.sp-share-label{font-size:13px;color:var(--slate);font-weight:600;}
+.sp-share-btns{display:flex;gap:10px;flex-wrap:wrap;}
+.sp-share-btn{font-size:13px;font-weight:600;padding:8px 15px;border-radius:100px;border:1px solid var(--line);background:var(--card);color:var(--ink);transition:.15s;}
+.sp-share-btn:hover{border-color:var(--ink);}
+.sp-share-btn-wa{border-color:#25D366;color:#0F8A46;}
+.sp-share-btn-wa:hover{background:#E9F9EF;border-color:#25D366;}
 .sp-jd-section{margin-bottom:22px;}
 .sp-jd-section h3{font-size:15px;font-weight:700;margin-bottom:10px;}
 .sp-jd-section ul{margin:0;padding-left:20px;color:var(--slate);font-size:14.5px;line-height:1.8;}
@@ -206,7 +213,44 @@ function uid() {
     return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
   });
 }
+const UTM_STORAGE_KEY = "sp_utm";
+
+// Captures whatever UTM params are on the URL right now into sessionStorage,
+// ONCE per browser session ("first touch wins" — the standard attribution
+// model). Call this as early as possible on app load, before any pushState
+// navigation has a chance to strip the query string. If a value is already
+// stored, this is a no-op — a later in-app navigation with no UTM params
+// (or different ones) should never overwrite the touch that actually
+// brought the candidate to the site.
+function captureUTM() {
+  try {
+    if (sessionStorage.getItem(UTM_STORAGE_KEY)) return;
+    const p = new URLSearchParams(window.location.search);
+    const utm = {
+      utm_source: p.get("utm_source") || "direct",
+      utm_medium: p.get("utm_medium") || "none",
+      utm_campaign: p.get("utm_campaign") || "none",
+      fbclid: p.get("fbclid") || null,
+    };
+    sessionStorage.setItem(UTM_STORAGE_KEY, JSON.stringify(utm));
+  } catch {
+    // sessionStorage can throw in some privacy modes/embedded contexts —
+    // getUTM()'s own URL-parsing fallback below still covers that case.
+  }
+}
+
 function getUTM() {
+  try {
+    // Prefer whatever captureUTM() stored at the start of this session.
+    // openJob()/goHome() rewrite the address bar via pushState without the
+    // query string, so by the time a candidate reaches the apply form the
+    // URL itself may no longer carry the UTM params they actually arrived
+    // with — sessionStorage is what survives that navigation.
+    const stored = sessionStorage.getItem(UTM_STORAGE_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch {
+    // fall through to URL parsing below
+  }
   try {
     const p = new URLSearchParams(window.location.search);
     return {
@@ -525,6 +569,68 @@ function Home({ jobs, applications, onJob, loading }) {
 /* ════════════════════════════════════════════════════════════════════════
    CANDIDATE: JOB DETAIL
    ════════════════════════════════════════════════════════════════════════ */
+// Builds the URL a candidate actually shares. utm_source is fixed to
+// "organic_share" so anyone applying through it is attributed as peer
+// referral rather than "direct" (getUTM()'s fallback) or blended into
+// whatever paid-ad UTM the *sharer* originally arrived with — medium
+// distinguishes copy-link vs WhatsApp so Admin > Analytics can tell
+// which channel candidates actually use to pass jobs along.
+function shareUrl(job, medium) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const params = new URLSearchParams({
+    utm_source: "organic_share",
+    utm_medium: medium, // "copy_link" | "whatsapp"
+    utm_campaign: job.id,
+  });
+  return `${origin}/job/${job.id}?${params.toString()}`;
+}
+
+function ShareJob({ job }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyLink = async () => {
+    const url = shareUrl(job, "copy_link");
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Clipboard API can be unavailable (older mobile browsers, non-HTTPS
+      // contexts) — fall back to the old select-and-copy trick rather than
+      // silently doing nothing.
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch {}
+      document.body.removeChild(ta);
+    }
+    trackPH("job_shared", { job_id: job.id, job_title: job.title, method: "copy_link" });
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const shareOnWhatsApp = () => {
+    const url = shareUrl(job, "whatsapp");
+    const message = `${job.title} at ${job.company} — thought this might be a fit for you: ${url}`;
+    trackPH("job_shared", { job_id: job.id, job_title: job.title, method: "whatsapp" });
+    // No phone number in the wa.me link — this opens WhatsApp's own contact
+    // picker so the candidate chooses who to send it to, same click-to-chat
+    // pattern used by every "share to WhatsApp" button.
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <div className="sp-share">
+      <span className="sp-share-label">Know someone who'd be a good fit?</span>
+      <div className="sp-share-btns">
+        <button type="button" className="sp-share-btn" onClick={copyLink}>{copied ? "Link copied ✓" : "Copy link"}</button>
+        <button type="button" className="sp-share-btn sp-share-btn-wa" onClick={shareOnWhatsApp}>Share on WhatsApp</button>
+      </div>
+    </div>
+  );
+}
+
 function JobDetail({ job, onBack, onSuccess, onStart }) {
   const [f, setF] = useState({ name: "", phone: "", email: "", noticePeriod: "", currentSalary: "", cvFile: null });
   const [submitting, setSubmitting] = useState(false);
@@ -615,6 +721,7 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
           <div><div className="sp-jd-fact-label">Type</div><div className="sp-jd-fact-val">{job.type}</div></div>
         </div>
         <button className="sp-jd-cta" onClick={scrollToForm}>Apply now</button>
+        <ShareJob job={job} />
       </div>
       {job.desc.length > 0 && (
         <div className="sp-jd-section">
@@ -690,6 +797,7 @@ function Success({ data, onHome }) {
       <div className="sp-success-ic">✓</div>
       <h2>You're in, {data.name.split(" ")[0]}.</h2>
       <p>Your application for <strong>{data.job.title}</strong> at {data.job.company} has been sent. A recruiter will reach out within 24–48 hours on the number you shared.</p>
+      <ShareJob job={data.job} />
       <button className="sp-success-btn" onClick={onHome}>Browse more jobs</button>
     </div>
   );
@@ -1282,6 +1390,13 @@ function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, 
    ROOT APP
    ════════════════════════════════════════════════════════════════════════ */
 export default function App() {
+  // Must run before anything else touches the URL (pendingJobId reads the
+  // path just below; openJob()/goHome() further down rewrite it via
+  // pushState). Lazy useState initializers run synchronously during this
+  // first render, in declaration order, so this is guaranteed to capture
+  // whatever UTM params are on the URL right now before they can be lost.
+  useState(() => { captureUTM(); return null; });
+
   const [db, setDb] = useState({ jobs: [], applications: [] });
   const [loadingJobs, setLoadingJobs] = useState(true);
   // Admin is reached only via URL path (e.g. jobpulse.../admin), not a
