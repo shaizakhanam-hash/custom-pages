@@ -1454,6 +1454,28 @@ export default function App() {
       } else {
         setDb((d) => ({ ...d, jobs: (data || []).map(dbRowToJob) }));
       }
+       // Load screening questions
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from("screening_questions")
+        .select("*")
+        .order("question_order", { ascending: true });
+
+      if (error) {
+        console.error("Failed to load screening questions:", error);
+      } else if (data) {
+        const grouped: Record<string, any[]> = {};
+        for (const q of data) {
+          if (!grouped[q.job_id]) {
+            grouped[q.job_id] = [];
+          }
+          grouped[q.job_id].push(q);
+        }
+        setScreeningQuestionsMap(grouped);
+      }
+    })();
+  }, []);
       setLoadingJobs(false);
     })();
   }, []);
