@@ -456,25 +456,39 @@ function Home({ jobs, applications, onJob, loading, isLtmView }) {
 
   return (
     <>
-      <section className="sp-hero">
-        <div className="sp-eyebrow"><span className="dot" /> {isLtmView ? "LTM JOBS" : "HIRING NOW · ALL INDUSTRIES"}</div>
-        <h1 className="sp-h1">Find opportunities. <em>Apply here.</em></h1>
-        <p className="sp-sub">Browse {isLtmView ? "LTM " : ""}open roles across every industry and apply directly — no search needed, just scroll and find what fits.</p>
-        <div className="sp-pulse-strip">
-          <div className="sp-pulse-item">
-            <div className="sp-pulse-num sp-mono">{pulseCount.toLocaleString("en-IN")}</div>
-            <div className="sp-pulse-label">applications sent<br />in the last 24 hours</div>
+      {isLtmView ? (
+        <section className="sp-hero" style={{ background: "linear-gradient(135deg, #0A0A0A 0%, #1a2a4a 100%)", color: "#fff", paddingBottom: 60 }}>
+          <div style={{ maxWidth: 800, margin: "0 auto" }}>
+            <div className="sp-eyebrow" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", borderColor: "rgba(255,255,255,0.2)", marginBottom: 20 }}><span className="dot" /> LONG-TERM OPPORTUNITIES</div>
+            <h1 style={{ fontSize: "clamp(40px, 8vw, 72px)", fontWeight: 800, lineHeight: 1.05, letterSpacing: "-0.03em", margin: "0 0 20px", color: "#fff" }}>
+              We're <em style={{ color: "#4ADE80", fontStyle: "normal" }}>actively hiring.</em>
+            </h1>
+            <p style={{ fontSize: 18, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, maxWidth: 650, marginBottom: 0 }}>
+              Pre-register for {jobs.filter((j) => j.active && j.jobTag === "ltm").length} long-term roles, answer screening questions, and connect directly with hiring teams. Everything happens here.
+            </p>
           </div>
-          <div className="sp-pulse-item">
-            <div className="sp-pulse-num sp-mono">{jobs.filter((j) => j.active).length}</div>
-            <div className="sp-pulse-label">open roles<br />live right now</div>
+        </section>
+      ) : (
+        <section className="sp-hero">
+          <div className="sp-eyebrow"><span className="dot" /> HIRING NOW · ALL INDUSTRIES</div>
+          <h1 className="sp-h1">Find opportunities. <em>Apply here.</em></h1>
+          <p className="sp-sub">Browse open roles across every industry and apply directly — no search needed, just scroll and find what fits.</p>
+          <div className="sp-pulse-strip">
+            <div className="sp-pulse-item">
+              <div className="sp-pulse-num sp-mono">{pulseCount.toLocaleString("en-IN")}</div>
+              <div className="sp-pulse-label">applications sent<br />in the last 24 hours</div>
+            </div>
+            <div className="sp-pulse-item">
+              <div className="sp-pulse-num sp-mono">{jobs.filter((j) => j.active).length}</div>
+              <div className="sp-pulse-label">open roles<br />live right now</div>
+            </div>
+            <div className="sp-pulse-item">
+              <div className="sp-pulse-num sp-mono">{CATEGORIES.length - 1}</div>
+              <div className="sp-pulse-label">industries<br />hiring today</div>
+            </div>
           </div>
-          <div className="sp-pulse-item">
-            <div className="sp-pulse-num sp-mono">{CATEGORIES.length - 1}</div>
-            <div className="sp-pulse-label">industries<br />hiring today</div>
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {!isLtmView && (
         <section className="sp-companies">
@@ -489,7 +503,10 @@ function Home({ jobs, applications, onJob, loading, isLtmView }) {
 
       <section className="sp-listing">
         <div className="sp-listing-hdr">
-          <div className="sp-listing-title">{filtered.length} open role{filtered.length === 1 ? "" : "s"}</div>
+          <div style={{ flex: 1 }}>
+            <div className="sp-listing-title">{filtered.length} job{filtered.length === 1 ? "" : "s"} opening</div>
+            {isLtmView && <p style={{ fontSize: 14, color: "var(--slate)", marginTop: 6, marginBottom: 0 }}>Apply now and let's connect.</p>}
+          </div>
         </div>
         {!isLtmView && (
           <div className="sp-cat-row">
@@ -706,8 +723,8 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
       )}
 
       <div className="sp-form-card" ref={formRef}>
-        <h3 style={{ marginTop: 0, fontSize: 19 }}>Apply for {job.title}</h3>
-        <p style={{ color: "var(--slate)", fontSize: 14, marginBottom: 20 }}>Takes under a minute — a recruiter reviews every application.</p>
+        <h3 style={{ marginTop: 0, fontSize: 19 }}>Complete your application</h3>
+        <p style={{ color: "var(--slate)", fontSize: 14, marginBottom: 20 }}>Just the essentials — your details, your CV, and a few thoughts from you. That's all we need.</p>
         <form onSubmit={submit} onFocus={markStarted}>
           <div className="sp-field"><label>Full name</label><input required value={f.name} onChange={set("name")} placeholder="Your full name" /></div>
           <div className="sp-field-row">
@@ -735,13 +752,13 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
           {screeningQuestions && screeningQuestions.length > 0 && (
             <>
               <div className="sp-screening-nudge">
-                <div className="sp-screening-nudge-icon">?</div>
+                <div className="sp-screening-nudge-icon">⚡</div>
                 <div className="sp-screening-nudge-text">
-                  <div className="sp-screening-nudge-label">{screeningQuestions.length} screening question{screeningQuestions.length === 1 ? "" : "s"}</div>
+                  <div className="sp-screening-nudge-label">Quick questions to help us match you better</div>
                   <div className="sp-screening-nudge-desc">
                     {screeningQuestions.filter((q) => q.is_mandatory).length > 0
-                      ? `${screeningQuestions.filter((q) => q.is_mandatory).length} required, ${screeningQuestions.filter((q) => !q.is_mandatory).length} optional`
-                      : "All optional — help us learn more about you"}
+                      ? `${screeningQuestions.filter((q) => q.is_mandatory).length} quick answer${screeningQuestions.filter((q) => q.is_mandatory).length === 1 ? "" : "s"} — takes 30 seconds. This helps the recruiter understand your fit.`
+                      : "A few extra details go a long way. Answer to stand out from other applicants."}
                   </div>
                 </div>
               </div>
@@ -755,17 +772,18 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
                   <textarea
                     value={screening[q.id] || ""}
                     onChange={setScreeningAnswer(q.id)}
-                    placeholder="Your answer…"
+                    placeholder="Be genuine. Short answers work fine."
                     rows={2}
                     required={q.is_mandatory}
+                    style={{ resize: "vertical" }}
                   />
                 </div>
               ))}
             </>
           )}
 
-          <button className="sp-submit" disabled={submitting}>{submitting ? "Submitting…" : "Submit application"}</button>
-          <div className="sp-consent">By applying, you agree to be contacted by JobPulse and {job.company} about this and similar roles via call, SMS, WhatsApp or email.</div>
+          <button className="sp-submit" disabled={submitting}>{submitting ? "Sending your application…" : "Send application"}</button>
+          <div className="sp-consent">We'll reach out via phone or WhatsApp first — we respect your time. You're in control of the conversation.</div>
         </form>
       </div>
     </div>
