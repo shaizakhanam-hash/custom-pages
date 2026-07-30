@@ -461,10 +461,10 @@ function Home({ jobs, applications, onJob, loading, isLtmView }) {
           <div style={{ maxWidth: 800, margin: "0 auto" }}>
             <div className="sp-eyebrow" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", borderColor: "rgba(255,255,255,0.2)", marginBottom: 20 }}><span className="dot" /> LONG-TERM OPPORTUNITIES</div>
             <h1 style={{ fontSize: "clamp(40px, 8vw, 72px)", fontWeight: 800, lineHeight: 1.05, letterSpacing: "-0.03em", margin: "0 0 20px", color: "#fff" }}>
-              We're <em style={{ color: "#4ADE80", fontStyle: "normal" }}>actively hiring.</em>
+              <em style={{ color: "#4ADE80", fontStyle: "normal" }}>LTM</em> is actively hiring.
             </h1>
             <p style={{ fontSize: 18, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, maxWidth: 650, marginBottom: 0 }}>
-              Pre-register for {jobs.filter((j) => j.active && j.jobTag === "ltm").length} long-term roles, answer screening questions, and connect directly with hiring teams. Everything happens here.
+              Pre-register for {jobs.filter((j) => j.active && j.jobTag === "ltm").length} roles, answer quick screening questions, and connect directly with our hiring team. It's straightforward.
             </p>
           </div>
         </section>
@@ -485,6 +485,19 @@ function Home({ jobs, applications, onJob, loading, isLtmView }) {
             <div className="sp-pulse-item">
               <div className="sp-pulse-num sp-mono">{CATEGORIES.length - 1}</div>
               <div className="sp-pulse-label">industries<br />hiring today</div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {isLtmView && (
+        <section className="sp-companies" style={{ background: "rgba(255,255,255,0.02)", borderTop: "1px solid rgba(255,255,255,0.1)", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+          <div className="sp-companies-inner">
+            <div style={{ maxWidth: 900, margin: "0 auto" }}>
+              <div className="sp-companies-label" style={{ color: "rgba(255,255,255,0.7)" }}>About LTM</div>
+              <p style={{ fontSize: 16, color: "rgba(255,255,255,0.85)", lineHeight: 1.7, marginTop: 12, marginBottom: 0 }}>
+                <strong style={{ color: "#fff" }}>LTM</strong> (formerly LTIMindtree Limited) is an Indian multinational technology services and digital consulting company. A subsidiary of <strong>Larsen & Toubro</strong>, headquartered in Mumbai, LTM is an AI-centric global technology services company and the Business Creativity partner to the world's largest and most disruptive enterprises.
+              </p>
             </div>
           </div>
         </section>
@@ -1525,8 +1538,10 @@ export default function App() {
 
   const goHome = () => {
     setView("candidate"); setPage("home"); setSelJob(null);
-    if (typeof window !== "undefined") window.history.pushState({}, "", "/");
-    setIsLtmView(false);
+    if (typeof window !== "undefined") {
+      const path = isLtmView ? "/jobs/ltm" : "/";
+      window.history.pushState({}, "", path);
+    }
   };
 
   const openJob = (j) => {
