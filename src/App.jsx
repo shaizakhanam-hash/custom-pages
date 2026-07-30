@@ -192,6 +192,14 @@ input,select,textarea{font-family:inherit;}
 .sp-screening-checkbox{width:20px;height:20px;cursor:pointer;}
 .sp-screening-remove{font-size:12px;color:var(--danger);cursor:pointer;background:none;border:none;padding:4px 8px;font-weight:600;}
 
+/* About LTM section */
+.sp-ltm-about{padding:48px 32px;background:rgba(26, 42, 74, 0.5);border-top:1px solid rgba(74, 222, 128, 0.2);border-bottom:1px solid rgba(74, 222, 128, 0.2);}
+.sp-ltm-about-inner{max-width:1120px;margin:0 auto;}
+.sp-ltm-about-content{max-width:900px;}
+.sp-ltm-about-label{font-size:12px;font-weight:600;color:#4ADE80;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:16px;}
+.sp-ltm-about-text{font-size:15.5px;color:#E2E8F0;line-height:1.8;margin:0;font-weight:400;}
+.sp-ltm-about-text strong{color:#fff;}
+
 @media(max-width:760px){.sp-field-row,.sp-kpi-row{grid-template-columns:1fr 1fr;}.sp-hdr{padding:14px 18px;}.sp-hero,.sp-listing,.sp-companies{padding-left:18px;padding-right:18px;}}
 `;
 
@@ -491,12 +499,12 @@ function Home({ jobs, applications, onJob, loading, isLtmView }) {
       )}
 
       {isLtmView && (
-        <section style={{ padding: "48px 32px", background: "rgba(26, 42, 74, 0.5)", borderTop: "1px solid rgba(74, 222, 128, 0.2)", borderBottom: "1px solid rgba(74, 222, 128, 0.2)" }}>
-          <div style={{ maxWidth: 1120px, margin: "0 auto" }}>
-            <div style={{ maxWidth: 900 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#4ADE80", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16 }}>About LTM</div>
-              <p style={{ fontSize: 15.5, color: "#E2E8F0", lineHeight: 1.8, margin: 0, fontWeight: 400 }}>
-                <strong style={{ color: "#fff" }}>LTM</strong> (formerly LTIMindtree Limited) is an Indian multinational technology services and digital consulting company. A subsidiary of <strong style={{ color: "#fff" }}>Larsen & Toubro</strong>, headquartered in Mumbai, LTM is an AI-centric global technology services company and the Business Creativity partner to the world's largest and most disruptive enterprises.
+        <section className="sp-ltm-about">
+          <div className="sp-ltm-about-inner">
+            <div className="sp-ltm-about-content">
+              <div className="sp-ltm-about-label">About LTM</div>
+              <p className="sp-ltm-about-text">
+                <strong>LTM</strong> (formerly LTIMindtree Limited) is an Indian multinational technology services and digital consulting company. A subsidiary of <strong>Larsen & Toubro</strong>, headquartered in Mumbai, LTM is an AI-centric global technology services company and the Business Creativity partner to the world's largest and most disruptive enterprises.
               </p>
             </div>
           </div>
