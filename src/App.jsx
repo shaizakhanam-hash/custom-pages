@@ -491,12 +491,12 @@ function Home({ jobs, applications, onJob, loading, isLtmView }) {
       )}
 
       {isLtmView && (
-        <section className="sp-companies" style={{ background: "rgba(255,255,255,0.02)", borderTop: "1px solid rgba(255,255,255,0.1)", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-          <div className="sp-companies-inner">
-            <div style={{ maxWidth: 900, margin: "0 auto" }}>
-              <div className="sp-companies-label" style={{ color: "rgba(255,255,255,0.7)" }}>About LTM</div>
-              <p style={{ fontSize: 16, color: "rgba(255,255,255,0.85)", lineHeight: 1.7, marginTop: 12, marginBottom: 0 }}>
-                <strong style={{ color: "#fff" }}>LTM</strong> (formerly LTIMindtree Limited) is an Indian multinational technology services and digital consulting company. A subsidiary of <strong>Larsen & Toubro</strong>, headquartered in Mumbai, LTM is an AI-centric global technology services company and the Business Creativity partner to the world's largest and most disruptive enterprises.
+        <section style={{ padding: "48px 32px", background: "rgba(26, 42, 74, 0.5)", borderTop: "1px solid rgba(74, 222, 128, 0.2)", borderBottom: "1px solid rgba(74, 222, 128, 0.2)" }}>
+          <div style={{ maxWidth: 1120px, margin: "0 auto" }}>
+            <div style={{ maxWidth: 900 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#4ADE80", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16 }}>About LTM</div>
+              <p style={{ fontSize: 15.5, color: "#E2E8F0", lineHeight: 1.8, margin: 0, fontWeight: 400 }}>
+                <strong style={{ color: "#fff" }}>LTM</strong> (formerly LTIMindtree Limited) is an Indian multinational technology services and digital consulting company. A subsidiary of <strong style={{ color: "#fff" }}>Larsen & Toubro</strong>, headquartered in Mumbai, LTM is an AI-centric global technology services company and the Business Creativity partner to the world's largest and most disruptive enterprises.
               </p>
             </div>
           </div>
