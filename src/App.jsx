@@ -5,7 +5,7 @@ import Papa from "papaparse";
 /* ════════════════════════════════════════════════════════════════════════
    JobPulse — internal jobs POC (placeholder brand, not affiliated with any
    named company). Deployed on vercel.app for now; swap branding + point
-   at a real domain once this graduates past POC — see setup-guide.md.
+   at a real domain once this graduates past POC.
    ════════════════════════════════════════════════════════════════════════ */
 
 const POSTHOG_API_KEY = "phc_AdNBNr4z2tTcRFqSAQM5XjJamQJjoEvEoFdBZftXhWYk";
@@ -184,7 +184,7 @@ input,select,textarea{font-family:inherit;}
 .sp-wa-preview{background:#F1F5F9;border:1px dashed var(--line);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--slate);font-style:italic;margin-bottom:18px;}
 .sp-footer{text-align:center;padding:30px;font-size:12.5px;color:var(--slate);border-top:1px solid var(--line);}
 
-/* Screening questions admin edit */
+/* Screening questions admin */
 .sp-screening-list{margin-top:12px;border:1px solid var(--line);border-radius:9px;padding:12px;background:#F9FAFB;}
 .sp-screening-item{display:flex;gap:10px;margin-bottom:8px;padding:10px;background:#fff;border:1px solid var(--line);border-radius:6px;align-items:center;}
 .sp-screening-item:last-child{margin-bottom:0;}
@@ -192,7 +192,7 @@ input,select,textarea{font-family:inherit;}
 .sp-screening-checkbox{width:20px;height:20px;cursor:pointer;}
 .sp-screening-remove{font-size:12px;color:var(--danger);cursor:pointer;background:none;border:none;padding:4px 8px;font-weight:600;}
 
-@media(max-width:760px){.sp-adm-grid,.sp-field-row,.sp-kpi-row{grid-template-columns:1fr 1fr;}.sp-hdr{padding:14px 18px;}.sp-hero,.sp-listing,.sp-companies{padding-left:18px;padding-right:18px;}}
+@media(max-width:760px){.sp-field-row,.sp-kpi-row{grid-template-columns:1fr 1fr;}.sp-hdr{padding:14px 18px;}.sp-hero,.sp-listing,.sp-companies{padding-left:18px;padding-right:18px;}}
 `;
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -265,7 +265,7 @@ async function sendWhatsApp({ phone, templateId, params }) {
     });
     return resp.ok;
   } catch (e) {
-    console.log("[WhatsApp send stub — wire up edge function]", phone, templateId, params);
+    console.log("[WhatsApp send stub]", phone, templateId, params);
     return false;
   }
 }
@@ -346,6 +346,7 @@ function dbRowToJob(row) {
     postedAt: new Date(row.created_at).getTime(),
   };
 }
+
 function jobToDbRow(job) {
   return {
     title: job.title,
@@ -366,6 +367,7 @@ function jobToDbRow(job) {
     active: job.active,
   };
 }
+
 function dbRowToApplication(row) {
   return {
     id: row.id,
@@ -394,13 +396,16 @@ function fmtSalary(j) {
   const f = (n) => (n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`);
   return `${f(j.salMin)}–${f(j.salMax)} / ${j.salUnit === "annum" ? "yr" : "mo"}`;
 }
+
 function salaryInputToRupees(value, unit) {
   const n = Number(value) || 0;
   return unit === "annum" ? Math.round(n * 100000) : n;
 }
+
 function rupeesToSalaryInput(rupees, unit) {
   return unit === "annum" ? (rupees ? rupees / 100000 : "") : rupees || "";
 }
+
 function timeAgo(ts) {
   const d = Math.floor((Date.now() - ts) / 86400000);
   return d <= 0 ? "Posted today" : `Posted ${d}d ago`;
@@ -430,6 +435,7 @@ function Home({ jobs, applications, onJob, loading, isLtmView }) {
   useEffect(() => {
     trackPH("home_viewed", { ltm_view: isLtmView });
   }, [isLtmView]);
+
   useEffect(() => {
     setPulseCount(1284 + applications.length);
   }, [applications.length]);
@@ -579,7 +585,6 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
 
   useEffect(() => {
     trackPH("job_viewed", { job_id: job.id, job_title: job.title, company: job.company, category: job.category });
-    // Initialize screening answers object
     const init = {};
     if (screeningQuestions) {
       screeningQuestions.forEach((q) => {
@@ -614,7 +619,6 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
     const salaryIsNumber = f.currentSalary !== "" && !isNaN(Number(f.currentSalary)) && Number(f.currentSalary) >= 0;
     if (!f.name || !/^[6-9]\d{9}$/.test(phone) || !f.email || !f.noticePeriod || !salaryIsNumber || !f.cvFile) return;
 
-    // Check mandatory screening questions
     const mandatoryQuestions = screeningQuestions?.filter((q) => q.is_mandatory) || [];
     for (const q of mandatoryQuestions) {
       if (!screening[q.id] || screening[q.id].trim() === "") {
@@ -899,7 +903,7 @@ function AdminPostJob({ onCreate }) {
   );
 }
 
-function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent, onScreeningQuestionsUpdate }) {
+function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
   const [editingId, setEditingId] = useState(null);
   const [ef, setEf] = useState(null);
   const [promotingId, setPromotingId] = useState(null);
@@ -1022,11 +1026,9 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent, onScreening
                       <input readOnly value={jobLink(j)} onClick={(e) => e.target.select()} />
                     </div>
                     <div className="sp-wa-preview">"{WHATSAPP_TEMPLATES.find((t) => t.id === "job_promotion").preview("Candidate Name", j.title, j.company, j.location, j.exp || "Not specified", fmtSalary(j))}"</div>
-
                     <p style={{ color: "var(--slate)", fontSize: 13.5, marginTop: 0 }}>
                       Send to any list — upload a CSV or paste numbers below. Only message people who've agreed to be contacted this way.
                     </p>
-
                     <div className="sp-field-row">
                       <div className="sp-field">
                         <label>Upload CSV (name + phone columns, auto-detected)</label>
@@ -1039,7 +1041,6 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent, onScreening
                         <button className="sp-mini-btn" style={{ marginTop: 6 }} onClick={applyPasted} disabled={!pasted.trim()}>Load pasted numbers</button>
                       </div>
                     </div>
-
                     {contacts.length > 0 && (
                       <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 9, margin: "10px 0 14px" }}>
                         <table className="sp-table">
@@ -1055,7 +1056,6 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent, onScreening
                         </table>
                       </div>
                     )}
-
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                       <button className="sp-submit" style={{ width: "auto", padding: "10px 18px", marginTop: 0 }} disabled={contacts.length === 0 || sending} onClick={() => sendPromotion(j)}>
                         {sending ? `Sending… (${progress.sent + progress.failed}/${contacts.length})` : `Send to ${contacts.length} contact${contacts.length === 1 ? "" : "s"}`}
@@ -1068,7 +1068,6 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent, onScreening
                   </div>
                 </td>
               </tr>
-
             ) : (
               <tr key={j.id}>
                 <td>{j.title}</td><td>{j.company}</td><td>{j.category}</td>
@@ -1105,7 +1104,7 @@ function RelevanceBadge({ score, detail }) {
     const label = reason === "resume_text_unavailable" ? "CV unreadable"
       : reason === "job_has_no_scoreable_fields" ? "No JD to match"
       : "Scoring…";
-    return <span className="sp-rel-badge none" title="Not yet scored, or nothing in the JD/CV was comparable">{label}</span>;
+    return <span className="sp-rel-badge none" title="Not yet scored">{label}</span>;
   }
   const tier = score >= 70 ? "high" : score >= 50 ? "mid" : "low";
   const parts = [];
@@ -1113,7 +1112,7 @@ function RelevanceBadge({ score, detail }) {
     const cat = detail?.[key];
     if (cat) parts.push(`${key.replace("_", " ")}: ${cat.matched.length}/${cat.matched.length + cat.missed.length}`);
   }
-  if (detail?.description_fallback) parts.push("matched against job description (no JD skills fields set)");
+  if (detail?.description_fallback) parts.push("matched against job description");
   return <span className={`sp-rel-badge ${tier}`} title={parts.join(" · ") || "Relevance score"}>{score}</span>;
 }
 
@@ -1149,7 +1148,6 @@ function AdminApplications({ applications, jobs, loading, screeningAnswersMap })
   const sourceBreakdown = useMemo(() => utmBreakdown(filtered, "utm_source", "direct"), [filtered]);
 
   const exportCSV = () => {
-    // Build column headers: standard columns + screening question columns
     const allScreeningQuestions = new Map();
     for (const appId in screeningAnswersMap) {
       const answers = screeningAnswersMap[appId] || [];
@@ -1225,7 +1223,7 @@ function AdminApplications({ applications, jobs, loading, screeningAnswersMap })
         {loading ? (
           <p style={{ color: "var(--slate)" }}>Loading applications…</p>
         ) : applications.length === 0 ? (
-          <p style={{ color: "var(--slate)" }}>No applications yet — try applying to a job from the candidate view.</p>
+          <p style={{ color: "var(--slate)" }}>No applications yet.</p>
         ) : filtered.length === 0 ? (
           <p style={{ color: "var(--slate)" }}>No applications for this job yet.</p>
         ) : (
@@ -1275,7 +1273,6 @@ function AdminAnalytics({ jobs, applications, funnel }) {
       </div>
       <div className="sp-card">
         <h3 style={{ marginTop: 0 }}>Funnel (this session)</h3>
-        <p style={{ color: "var(--slate)", fontSize: 13.5 }}>In production, back this with real PostHog Insights instead of the in-session counts shown here.</p>
         <table className="sp-table">
           <thead><tr><th>Step</th><th>Count</th><th>Drop-off from previous</th></tr></thead>
           <tbody>
@@ -1350,7 +1347,7 @@ function AdminCampaign({ jobs }) {
     <div className="sp-card">
       <h3 style={{ marginTop: 0 }}>WhatsApp campaign — upload your own list</h3>
       <p style={{ color: "var(--slate)", fontSize: 13.5 }}>
-        Upload a CSV with a name column and a phone column (any header containing "name" / "phone", "mobile", or "number" is auto-detected). Only upload contacts who've actually agreed to be reached this way.
+        Upload a CSV with a name column and a phone column. Only upload contacts who've agreed to be reached this way.
       </p>
       <div className="sp-field">
         <label>CSV file</label>
@@ -1363,7 +1360,7 @@ function AdminCampaign({ jobs }) {
             {WHATSAPP_TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </div>
-        <div className="sp-field"><label>Use an existing job (optional, auto-fills below)</label>
+        <div className="sp-field"><label>Use an existing job (optional)</label>
           <select value={selectedJobId} onChange={(e) => useJob(e.target.value)}>
             <option value="">— Manual entry —</option>
             {jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
@@ -1385,7 +1382,7 @@ function AdminCampaign({ jobs }) {
   );
 }
 
-function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, onWhatsAppSent, onExit, loadingApps, screeningAnswersMap, onScreeningQuestionsUpdate }) {
+function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, onWhatsAppSent, onExit, loadingApps, screeningAnswersMap }) {
   const [tab, setTab] = useState("post");
   return (
     <div className="sp-adm-shell">
@@ -1399,7 +1396,7 @@ function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, 
         ))}
       </div>
       {tab === "post" && <AdminPostJob onCreate={onCreate} />}
-      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} onUpdate={onUpdate} onWhatsAppSent={onWhatsAppSent} onScreeningQuestionsUpdate={onScreeningQuestionsUpdate} />}
+      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} onUpdate={onUpdate} onWhatsAppSent={onWhatsAppSent} />}
       {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} loading={loadingApps} screeningAnswersMap={screeningAnswersMap} />}
       {tab === "campaign" && <AdminCampaign jobs={jobs} />}
       {tab === "analytics" && <AdminAnalytics jobs={jobs} applications={applications} funnel={funnel} />}
@@ -1454,7 +1451,11 @@ export default function App() {
       } else {
         setDb((d) => ({ ...d, jobs: (data || []).map(dbRowToJob) }));
       }
-       // Load screening questions
+      setLoadingJobs(false);
+    })();
+  }, []);
+
+  // Load screening questions
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase
@@ -1465,7 +1466,7 @@ export default function App() {
       if (error) {
         console.error("Failed to load screening questions:", error);
       } else if (data) {
-        const grouped: Record<string, any[]> = {};
+        const grouped = {};
         for (const q of data) {
           if (!grouped[q.job_id]) {
             grouped[q.job_id] = [];
@@ -1474,9 +1475,6 @@ export default function App() {
         }
         setScreeningQuestionsMap(grouped);
       }
-    })();
-  }, []);
-      setLoadingJobs(false);
     })();
   }, []);
 
@@ -1492,8 +1490,9 @@ export default function App() {
           body: JSON.stringify({ password: ADMIN_PASSWORD }),
         });
         if (resp.ok) {
-          const { applications } = await resp.json();
+          const { applications, screeningAnswersMap } = await resp.json();
           setDb((d) => ({ ...d, applications: (applications || []).map(dbRowToApplication) }));
+          setScreeningAnswersMap(screeningAnswersMap || {});
         } else {
           console.error("Failed to load applications:", await resp.text());
         }
@@ -1551,7 +1550,6 @@ export default function App() {
     setPage("success");
     window.scrollTo(0, 0);
 
-    // Save application to Supabase
     const { data: appData, error } = await supabase.from("applications").insert({
       job_id: data.job.id,
       name: data.name,
@@ -1572,7 +1570,6 @@ export default function App() {
       return;
     }
 
-    // Save screening answers if any
     if (data.screeningAnswers && Object.keys(data.screeningAnswers).length > 0) {
       const answersToSave = Object.entries(data.screeningAnswers).map(([qId, answer]) => ({
         application_id: appData.id,
@@ -1599,7 +1596,6 @@ export default function App() {
       const newJob = dbRowToJob(data);
       setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === tempId ? newJob : j)) }));
 
-      // Save screening questions if any
       if (job.screeningQuestions && job.screeningQuestions.length > 0) {
         const questionsToSave = job.screeningQuestions.map((q, idx) => ({
           job_id: data.id,
