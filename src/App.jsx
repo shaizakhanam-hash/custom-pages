@@ -10,16 +10,7 @@ import Papa from "papaparse";
 
 const POSTHOG_API_KEY = "phc_AdNBNr4z2tTcRFqSAQM5XjJamQJjoEvEoFdBZftXhWYk";
 const POSTHOG_HOST = "https://us.i.posthog.com";
-// Pixel ID itself isn't secret (it's visible in every page's HTML/network
-// requests once live) — it's injected at build time via VITE_META_PIXEL_ID.
-// The CAPI access token is NOT here; it's a Supabase secret used only by
-// the meta-capi-on-apply edge function. See SETUP.md.
 const META_PIXEL_ID = import.meta.env.VITE_META_PIXEL_ID || "1221071876758000";
-// Supabase edge functions live on your Supabase project's own domain, not
-// your frontend's domain — these must be absolute URLs, not relative paths.
-// They also require the anon key on every call (Supabase's own auth layer,
-// separate from your admin password), or Supabase rejects the request
-// before your function code even runs.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const WHATSAPP_SEND_ENDPOINT = `${SUPABASE_URL}/functions/v1/whatsapp-send`;
@@ -29,21 +20,10 @@ const EDGE_FN_HEADERS = {
   "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
   "apikey": SUPABASE_ANON_KEY,
 };
-const ADMIN_PASSWORD = "Shine@123"; // swap for real Supabase Auth in production
+const ADMIN_PASSWORD = "Shine@123";
 
 /* ════════════════════════════════════════════════════════════════════════
    DESIGN TOKENS
-   Palette: ink #0E1B2B (primary text/nav), signal #FF6A2B (CTA/accent — the
-   "recruiter is responding" color), paper #FBF8F3 (warm background, not
-   cold white), pulse #16A085 (live/positive), slate #5B6472 (secondary text),
-   line #E7E1D6 (hairline borders).
-   Type: "Sora" for display (confident, geometric, slightly technical —
-   reads as "hiring infrastructure" not "startup landing page"), "Inter" for
-   body/UI, "IBM Plex Mono" for stat/data callouts (job codes, counters).
-   Signature element: the "Hiring Pulse" strip — a live counter of
-   applications sent, driven by real session data (wire to a Supabase COUNT
-   in production), reinforcing "immediate hiring" with a real number
-   instead of a decorative stat block.
    ════════════════════════════════════════════════════════════════════════ */
 const G = `
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
@@ -73,7 +53,7 @@ input,select,textarea{font-family:inherit;}
 
 /* Hero */
 .sp-hero{padding:64px 32px 40px;max-width:1120px;margin:0 auto;}
-.sp-eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--pulse);background:#E9F7F2;padding:6px 12px;border-radius:100px;margin-bottom:20px;}
+.sp-eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--pulse);background:#E9F7F2;padding:6px 12px;border-radius:100py;margin-bottom:20px;}
 .sp-eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--pulse);animation:sp-blink 1.6s infinite;}
 @keyframes sp-blink{0%,100%{opacity:1;}50%{opacity:.35;}}
 .sp-h1{font-size:clamp(32px,5vw,52px);font-weight:800;line-height:1.05;letter-spacing:-0.03em;max-width:820px;margin:0 0 18px;}
@@ -138,6 +118,13 @@ input,select,textarea{font-family:inherit;}
 .sp-jd-section h3{font-size:15px;font-weight:700;margin-bottom:10px;}
 .sp-jd-section ul{margin:0;padding-left:20px;color:var(--slate);font-size:14.5px;line-height:1.8;}
 
+/* Screening questions nudge */
+.sp-screening-nudge{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:#F0F8FF;margin:16px 0;display:flex;align-items:flex-start;gap:12px;}
+.sp-screening-nudge-icon{width:32px;height:32px;border-radius:50%;background:var(--signal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;}
+.sp-screening-nudge-text{display:flex;flex-direction:column;gap:2px;}
+.sp-screening-nudge-label{font-weight:600;font-size:13px;color:var(--ink);}
+.sp-screening-nudge-desc{font-size:12px;color:var(--slate);}
+
 /* Form */
 .sp-form-wrap{max-width:560px;margin:0 auto;padding:40px 32px 100px;}
 .sp-form-card{border:1px solid var(--line);border-radius:18px;padding:30px;background:var(--card);margin-top:8px;}
@@ -196,16 +183,20 @@ input,select,textarea{font-family:inherit;}
 .sp-wa-bar select{padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;background:#fff;}
 .sp-wa-preview{background:#F1F5F9;border:1px dashed var(--line);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--slate);font-style:italic;margin-bottom:18px;}
 .sp-footer{text-align:center;padding:30px;font-size:12.5px;color:var(--slate);border-top:1px solid var(--line);}
+
+/* Screening questions admin edit */
+.sp-screening-list{margin-top:12px;border:1px solid var(--line);border-radius:9px;padding:12px;background:#F9FAFB;}
+.sp-screening-item{display:flex;gap:10px;margin-bottom:8px;padding:10px;background:#fff;border:1px solid var(--line);border-radius:6px;align-items:center;}
+.sp-screening-item:last-child{margin-bottom:0;}
+.sp-screening-item input{flex:1;margin:0;padding:8px;border:none;background:transparent;font-size:13px;}
+.sp-screening-checkbox{width:20px;height:20px;cursor:pointer;}
+.sp-screening-remove{font-size:12px;color:var(--danger);cursor:pointer;background:none;border:none;padding:4px 8px;font-weight:600;}
+
 @media(max-width:760px){.sp-adm-grid,.sp-field-row,.sp-kpi-row{grid-template-columns:1fr 1fr;}.sp-hdr{padding:14px 18px;}.sp-hero,.sp-listing,.sp-companies{padding-left:18px;padding-right:18px;}}
 `;
 
 /* ════════════════════════════════════════════════════════════════════════
    TRACKING HELPERS
-   These call window.posthog / window.fbq if the scripts have loaded. In
-   this sandboxed preview those SDKs are not present (external network is
-   blocked), so calls silently no-op below — that's expected here and is
-   NOT a bug to fix. Once deployed on a real domain with the snippets in
-   index.html (see setup guide), these fire for real.
    ════════════════════════════════════════════════════════════════════════ */
 function uid() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -215,13 +206,6 @@ function uid() {
 }
 const UTM_STORAGE_KEY = "sp_utm";
 
-// Captures whatever UTM params are on the URL right now into sessionStorage,
-// ONCE per browser session ("first touch wins" — the standard attribution
-// model). Call this as early as possible on app load, before any pushState
-// navigation has a chance to strip the query string. If a value is already
-// stored, this is a no-op — a later in-app navigation with no UTM params
-// (or different ones) should never overwrite the touch that actually
-// brought the candidate to the site.
 function captureUTM() {
   try {
     if (sessionStorage.getItem(UTM_STORAGE_KEY)) return;
@@ -233,24 +217,14 @@ function captureUTM() {
       fbclid: p.get("fbclid") || null,
     };
     sessionStorage.setItem(UTM_STORAGE_KEY, JSON.stringify(utm));
-  } catch {
-    // sessionStorage can throw in some privacy modes/embedded contexts —
-    // getUTM()'s own URL-parsing fallback below still covers that case.
-  }
+  } catch {}
 }
 
 function getUTM() {
   try {
-    // Prefer whatever captureUTM() stored at the start of this session.
-    // openJob()/goHome() rewrite the address bar via pushState without the
-    // query string, so by the time a candidate reaches the apply form the
-    // URL itself may no longer carry the UTM params they actually arrived
-    // with — sessionStorage is what survives that navigation.
     const stored = sessionStorage.getItem(UTM_STORAGE_KEY);
     if (stored) return JSON.parse(stored);
-  } catch {
-    // fall through to URL parsing below
-  }
+  } catch {}
   try {
     const p = new URLSearchParams(window.location.search);
     return {
@@ -281,17 +255,7 @@ function trackMeta(event, props = {}, eventId) {
     }
   } catch (e) {}
 }
-// The server-side Meta Conversions API leg now runs entirely through the
-// meta-capi-on-apply Supabase Database Webhook (triggered on applications
-// INSERT) rather than a direct call from the frontend — see the comment in
-// JobDetail.submit() and meta-capi-on-apply/index.ts for why.
 
-// WhatsApp Business Cloud API send, routed through a Supabase Edge
-// Function (WHATSAPP_SEND_ENDPOINT) so the access token never sits in
-// frontend code. WhatsApp requires business-initiated messages outside an
-// active 24-hour customer conversation to use pre-approved message
-// templates — that's why this takes a template_id + params rather than
-// arbitrary freeform text. See setup-guide.md for template approval steps.
 async function sendWhatsApp({ phone, templateId, params }) {
   try {
     const resp = await fetch(WHATSAPP_SEND_ENDPOINT, {
@@ -306,16 +270,12 @@ async function sendWhatsApp({ phone, templateId, params }) {
   }
 }
 const WHATSAPP_TEMPLATES = [
-   { id: "job_promotion", label: "New job for you (with link)", preview: (name, job, company, location, exp, salary) => `Hi ${name}\nYour profile is being reviewed for ${job} at ${company} in ${location}\n\nExp required ${exp}\nSalary offered ${salary}\n\nIf interested click on the link below to register` },
+  { id: "job_promotion", label: "New job for you (with link)", preview: (name, job, company, location, exp, salary) => `Hi ${name}\nYour profile is being reviewed for ${job} at ${company} in ${location}\n\nExp required ${exp}\nSalary offered ${salary}\n\nIf interested click on the link below to register` },
   { id: "application_received", label: "Application received", preview: (name, job) => `Hi ${name}, thanks for applying to ${job} on JobPulse! A recruiter will review your application and get back to you within 24–48 hours.` },
   { id: "interview_invite", label: "Interview invite", preview: (name, job) => `Hi ${name}, good news — we'd like to invite you for an interview for the ${job} role. Please reply with your availability this week.` },
   { id: "document_request", label: "Document request", preview: (name, job) => `Hi ${name}, to move ahead with your application for ${job}, please share your updated CV and a valid ID proof at your earliest convenience.` },
-  ];
+];
 
-// Shared arbitrary-contact-list parsing — used anywhere an admin sends
-// WhatsApp to a list that ISN'T sourced from the applications table
-// (CSV upload here, and pasted numbers). Any header containing "name" /
-// "phone", "mobile", or "number" is auto-detected.
 function parseContactsCSV(file, onDone) {
   Papa.parse(file, {
     header: true,
@@ -336,8 +296,7 @@ function parseContactsCSV(file, onDone) {
     },
   });
 }
-// Parses pasted freeform text, one contact per line: "Name, phone" or
-// just a bare phone number (name falls back to "Candidate").
+
 function parseContactsText(text) {
   return text
     .split("\n")
@@ -353,7 +312,7 @@ function parseContactsText(text) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   MOCK DATA LAYER — swap for Supabase calls per SUPABASE SCHEMA comments
+   DATA LAYER
    ════════════════════════════════════════════════════════════════════════ */
 const CATEGORIES = [
   "All", "IT & Software", "Sales & Marketing", "Customer Support",
@@ -365,9 +324,6 @@ const TRUSTED_COMPANIES = [
   "Zomato", "Swiggy", "ICICI Bank", "Byju's", "BigBasket", "Larsen & Toubro",
 ];
 
-// Supabase row <-> app object mapping. The DB uses snake_case columns
-// (job_type, salary_min, etc.); the app's internal job objects use the
-// original camelCase shape everything else in this file already expects.
 function dbRowToJob(row) {
   return {
     id: row.id,
@@ -382,11 +338,10 @@ function dbRowToJob(row) {
     salUnit: row.salary_unit || "month",
     tags: row.tags || [],
     desc: row.description || [],
-    // All optional JD sections — each renders as its own block on the job
-    // page only if it has content, instead of one giant merged bullet dump.
     mustHave: row.must_have || [],
     goodToHave: row.good_to_have || [],
     education: row.education || [],
+    jobTag: row.job_tag || null,
     active: row.active,
     postedAt: new Date(row.created_at).getTime(),
   };
@@ -407,12 +362,13 @@ function jobToDbRow(job) {
     must_have: job.mustHave,
     good_to_have: job.goodToHave,
     education: job.education,
+    job_tag: job.jobTag,
     active: job.active,
-
   };
 }
 function dbRowToApplication(row) {
   return {
+    id: row.id,
     name: row.name,
     phone: row.phone,
     email: row.email,
@@ -426,9 +382,6 @@ function dbRowToApplication(row) {
     utm_medium: row.utm_medium,
     utm_campaign: row.utm_campaign,
     fbclid: row.fbclid,
-    // Written by meta-capi-on-apply after it scores this application's CV
-    // against the job's JD — see relevance.ts. score is null until the
-    // webhook has run, or if nothing was scoreable (see relevanceDetail.reason).
     relevanceScore: row.relevance_score ?? null,
     relevanceDetail: row.relevance_detail ?? null,
     capiSent: row.capi_sent ?? false,
@@ -441,10 +394,6 @@ function fmtSalary(j) {
   const f = (n) => (n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`);
   return `${f(j.salMin)}–${f(j.salMax)} / ${j.salUnit === "annum" ? "yr" : "mo"}`;
 }
-// Admin salary inputs: "Per annum" roles are conventionally quoted in
-// lakhs in India (e.g. "3-4 LPA"), so the form takes a lakhs number and
-// this converts it to the actual rupee figure stored in the DB. "Per
-// month" roles are typed as literal rupees (e.g. 18000), no conversion.
 function salaryInputToRupees(value, unit) {
   const n = Number(value) || 0;
   return unit === "annum" ? Math.round(n * 100000) : n;
@@ -474,20 +423,17 @@ function Header({ onHome }) {
 /* ════════════════════════════════════════════════════════════════════════
    CANDIDATE: HOME
    ════════════════════════════════════════════════════════════════════════ */
-function Home({ jobs, applications, onJob, loading }) {
+function Home({ jobs, applications, onJob, loading, isLtmView }) {
   const [cat, setCat] = useState("All");
   const [pulseCount, setPulseCount] = useState(1284 + applications.length);
 
   useEffect(() => {
-    trackPH("home_viewed");
-  }, []);
+    trackPH("home_viewed", { ltm_view: isLtmView });
+  }, [isLtmView]);
   useEffect(() => {
     setPulseCount(1284 + applications.length);
   }, [applications.length]);
 
-  // Small ambient increment purely for the "live" feel — in production
-  // replace with a real-time COUNT(*) from the applications table
-  // (e.g. Supabase Realtime subscription) instead of a client interval.
   useEffect(() => {
     const t = setInterval(() => setPulseCount((c) => c + (Math.random() > 0.6 ? 1 : 0)), 4000);
     return () => clearInterval(t);
@@ -496,17 +442,18 @@ function Home({ jobs, applications, onJob, loading }) {
   const filtered = useMemo(() => {
     return jobs.filter((j) => {
       if (!j.active) return false;
+      if (isLtmView && j.jobTag !== "ltm") return false;
       if (cat !== "All" && j.category !== cat) return false;
       return true;
     });
-  }, [jobs, cat]);
+  }, [jobs, cat, isLtmView]);
 
   return (
     <>
       <section className="sp-hero">
-        <div className="sp-eyebrow"><span className="dot" /> HIRING NOW · ALL INDUSTRIES</div>
+        <div className="sp-eyebrow"><span className="dot" /> {isLtmView ? "LTM JOBS" : "HIRING NOW · ALL INDUSTRIES"}</div>
         <h1 className="sp-h1">Find opportunities. <em>Apply here.</em></h1>
-        <p className="sp-sub">Browse open roles across every industry and apply directly — no search needed, just scroll and find what fits.</p>
+        <p className="sp-sub">Browse {isLtmView ? "LTM " : ""}open roles across every industry and apply directly — no search needed, just scroll and find what fits.</p>
         <div className="sp-pulse-strip">
           <div className="sp-pulse-item">
             <div className="sp-pulse-num sp-mono">{pulseCount.toLocaleString("en-IN")}</div>
@@ -523,24 +470,28 @@ function Home({ jobs, applications, onJob, loading }) {
         </div>
       </section>
 
-      <section className="sp-companies">
-        <div className="sp-companies-inner">
-          <div className="sp-companies-label">Hiring now on JobPulse</div>
-          <div className="sp-chip-row">
-            {TRUSTED_COMPANIES.map((c) => <div key={c} className="sp-chip">{c}</div>)}
+      {!isLtmView && (
+        <section className="sp-companies">
+          <div className="sp-companies-inner">
+            <div className="sp-companies-label">Hiring now on JobPulse</div>
+            <div className="sp-chip-row">
+              {TRUSTED_COMPANIES.map((c) => <div key={c} className="sp-chip">{c}</div>)}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <section className="sp-listing">
         <div className="sp-listing-hdr">
           <div className="sp-listing-title">{filtered.length} open role{filtered.length === 1 ? "" : "s"}</div>
         </div>
-        <div className="sp-cat-row">
-          {CATEGORIES.map((c) => (
-            <button key={c} className={`sp-cat-pill${cat === c ? " active" : ""}`} onClick={() => { setCat(c); trackPH("category_filtered", { category: c }); }}>{c}</button>
-          ))}
-        </div>
+        {!isLtmView && (
+          <div className="sp-cat-row">
+            {CATEGORIES.map((c) => (
+              <button key={c} className={`sp-cat-pill${cat === c ? " active" : ""}`} onClick={() => { setCat(c); trackPH("category_filtered", { category: c }); }}>{c}</button>
+            ))}
+          </div>
+        )}
         {loading ? (
           <div className="sp-empty">Loading open roles…</div>
         ) : filtered.length === 0 ? (
@@ -569,17 +520,11 @@ function Home({ jobs, applications, onJob, loading }) {
 /* ════════════════════════════════════════════════════════════════════════
    CANDIDATE: JOB DETAIL
    ════════════════════════════════════════════════════════════════════════ */
-// Builds the URL a candidate actually shares. utm_source is fixed to
-// "organic_share" so anyone applying through it is attributed as peer
-// referral rather than "direct" (getUTM()'s fallback) or blended into
-// whatever paid-ad UTM the *sharer* originally arrived with — medium
-// distinguishes copy-link vs WhatsApp so Admin > Analytics can tell
-// which channel candidates actually use to pass jobs along.
 function shareUrl(job, medium) {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const params = new URLSearchParams({
     utm_source: "organic_share",
-    utm_medium: medium, // "copy_link" | "whatsapp"
+    utm_medium: medium,
     utm_campaign: job.id,
   });
   return `${origin}/job/${job.id}?${params.toString()}`;
@@ -593,9 +538,6 @@ function ShareJob({ job }) {
     try {
       await navigator.clipboard.writeText(url);
     } catch {
-      // Clipboard API can be unavailable (older mobile browsers, non-HTTPS
-      // contexts) — fall back to the old select-and-copy trick rather than
-      // silently doing nothing.
       const ta = document.createElement("textarea");
       ta.value = url;
       ta.style.position = "fixed";
@@ -614,9 +556,6 @@ function ShareJob({ job }) {
     const url = shareUrl(job, "whatsapp");
     const message = `${job.title} at ${job.company} — thought this might be a fit for you: ${url}`;
     trackPH("job_shared", { job_id: job.id, job_title: job.title, method: "whatsapp" });
-    // No phone number in the wa.me link — this opens WhatsApp's own contact
-    // picker so the candidate chooses who to send it to, same click-to-chat
-    // pattern used by every "share to WhatsApp" button.
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   };
 
@@ -631,15 +570,24 @@ function ShareJob({ job }) {
   );
 }
 
-function JobDetail({ job, onBack, onSuccess, onStart }) {
+function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
   const [f, setF] = useState({ name: "", phone: "", email: "", noticePeriod: "", currentSalary: "", cvFile: null });
+  const [screening, setScreening] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const startedRef = useRef(false);
   const formRef = useRef(null);
 
   useEffect(() => {
     trackPH("job_viewed", { job_id: job.id, job_title: job.title, company: job.company, category: job.category });
-  }, [job.id]);
+    // Initialize screening answers object
+    const init = {};
+    if (screeningQuestions) {
+      screeningQuestions.forEach((q) => {
+        init[q.id] = "";
+      });
+    }
+    setScreening(init);
+  }, [job.id, screeningQuestions]);
 
   const markStarted = () => {
     if (!startedRef.current) {
@@ -656,28 +604,29 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const setFile = (e) => setF({ ...f, cvFile: e.target.files?.[0] || null });
+  const setScreeningAnswer = (qId) => (e) => setScreening({ ...screening, [qId]: e.target.value });
 
   const [cvError, setCvError] = useState("");
 
   const submit = async (e) => {
     e.preventDefault();
-    // Browser-native required/pattern validation (below, on the inputs
-    // themselves) already blocks submission before this runs — this is
-    // just a second guard so nothing slips through.
     const phone = f.phone.replace(/\D/g, "");
     const salaryIsNumber = f.currentSalary !== "" && !isNaN(Number(f.currentSalary)) && Number(f.currentSalary) >= 0;
     if (!f.name || !/^[6-9]\d{9}$/.test(phone) || !f.email || !f.noticePeriod || !salaryIsNumber || !f.cvFile) return;
+
+    // Check mandatory screening questions
+    const mandatoryQuestions = screeningQuestions?.filter((q) => q.is_mandatory) || [];
+    for (const q of mandatoryQuestions) {
+      if (!screening[q.id] || screening[q.id].trim() === "") {
+        alert(`Please answer the required screening question: "${q.question_text}"`);
+        return;
+      }
+    }
+
     setCvError("");
     setSubmitting(true);
-    const eventId = uid(); // shared between browser Pixel + server CAPI for dedup
+    const eventId = uid();
 
-    // CV upload to Supabase Storage — needs a public `resumes` bucket
-    // (see SETUP.md). Runs before the DB insert so cv_url on the
-    // applications row is a real, clickable link from the start, not a
-    // filename to be resolved later. Uploading successfully is a hard
-    // requirement, not best-effort — if this fails (missing bucket, RLS
-    // policy, network blip), we stop here rather than letting an
-    // application through with no CV attached to it.
     const ext = f.cvFile.name.split(".").pop();
     const path = `${uid()}.${ext}`;
     const { error: cvErr } = await supabase.storage.from("resumes").upload(path, f.cvFile);
@@ -689,23 +638,21 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
     }
     const cvUrl = supabase.storage.from("resumes").getPublicUrl(path).data.publicUrl;
 
-    // 1. PostHog — product/funnel analytics
     trackPH("apply_completed", { job_id: job.id, job_title: job.title, company: job.company, category: job.category, name: f.name, email: f.email, notice_period: f.noticePeriod });
-
-    // 2. Meta Pixel — browser-side conversion signal
     trackMeta("Lead", { content_name: job.title, content_category: job.category, value: 0, currency: "INR" }, eventId);
 
-    // 3. Server-side Meta Conversions API now runs entirely off the
-    //    Supabase Database Webhook on `applications` INSERT (see
-    //    meta-capi-on-apply/index.ts) rather than a direct call from here.
-    //    That function looks up the job's JD, downloads + scores the CV
-    //    against it, and only fires the Lead event if the candidate clears
-    //    the relevance threshold — none of which a client-side fetch with
-    //    just the anon key can safely do. Calling it from both places would
-    //    also risk double-firing the same event_id. eventId still needs to
-    //    reach the DB row (below) so the webhook's Lead event can dedupe
-    //    against the browser Pixel call above.
-    onSuccess({ name: f.name, phone, email: f.email, noticePeriod: f.noticePeriod, currentSalary: f.currentSalary, cvUrl, job, eventId });
+    onSuccess({
+      name: f.name,
+      phone,
+      email: f.email,
+      noticePeriod: f.noticePeriod,
+      currentSalary: f.currentSalary,
+      cvUrl,
+      job,
+      eventId,
+      screeningAnswers: screening,
+      screeningQuestions: screeningQuestions || [],
+    });
     setSubmitting(false);
   };
 
@@ -780,6 +727,39 @@ function JobDetail({ job, onBack, onSuccess, onStart }) {
             <input required type="file" accept=".pdf,.doc,.docx" onChange={(e) => { setFile(e); setCvError(""); }} />
             {cvError && <div style={{ color: "#DC2626", fontSize: 13, marginTop: 6 }}>{cvError}</div>}
           </div>
+
+          {screeningQuestions && screeningQuestions.length > 0 && (
+            <>
+              <div className="sp-screening-nudge">
+                <div className="sp-screening-nudge-icon">?</div>
+                <div className="sp-screening-nudge-text">
+                  <div className="sp-screening-nudge-label">{screeningQuestions.length} screening question{screeningQuestions.length === 1 ? "" : "s"}</div>
+                  <div className="sp-screening-nudge-desc">
+                    {screeningQuestions.filter((q) => q.is_mandatory).length > 0
+                      ? `${screeningQuestions.filter((q) => q.is_mandatory).length} required, ${screeningQuestions.filter((q) => !q.is_mandatory).length} optional`
+                      : "All optional — help us learn more about you"}
+                  </div>
+                </div>
+              </div>
+
+              {screeningQuestions.map((q) => (
+                <div key={q.id} className="sp-field">
+                  <label>
+                    {q.question_text}
+                    {q.is_mandatory && <span style={{ color: "var(--danger)" }}> *</span>}
+                  </label>
+                  <textarea
+                    value={screening[q.id] || ""}
+                    onChange={setScreeningAnswer(q.id)}
+                    placeholder="Your answer…"
+                    rows={2}
+                    required={q.is_mandatory}
+                  />
+                </div>
+              ))}
+            </>
+          )}
+
           <button className="sp-submit" disabled={submitting}>{submitting ? "Submitting…" : "Submit application"}</button>
           <div className="sp-consent">By applying, you agree to be contacted by JobPulse and {job.company} about this and similar roles via call, SMS, WhatsApp or email.</div>
         </form>
@@ -821,9 +801,23 @@ function AdminGate({ onIn }) {
 }
 
 function AdminPostJob({ onCreate }) {
-  const blank = { title: "", company: "", category: CATEGORIES[1], location: "", type: "Full-time", exp: "", salMin: "", salMax: "", salUnit: "month", tags: "", desc: "", mustHave: "", goodToHave: "", education: "" };
+  const blank = { title: "", company: "", category: CATEGORIES[1], location: "", type: "Full-time", exp: "", salMin: "", salMax: "", salUnit: "month", tags: "", desc: "", mustHave: "", goodToHave: "", education: "", jobTag: "", screeningQuestions: [] };
   const [f, setF] = useState(blank);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  const addScreeningQuestion = () => {
+    setF({ ...f, screeningQuestions: [...f.screeningQuestions, { text: "", mandatory: false }] });
+  };
+
+  const updateScreeningQuestion = (idx, field, value) => {
+    const updated = [...f.screeningQuestions];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setF({ ...f, screeningQuestions: updated });
+  };
+
+  const removeScreeningQuestion = (idx) => {
+    setF({ ...f, screeningQuestions: f.screeningQuestions.filter((_, i) => i !== idx) });
+  };
 
   const submit = (e) => {
     e.preventDefault();
@@ -838,10 +832,12 @@ function AdminPostJob({ onCreate }) {
       mustHave: f.mustHave.split("\n").map((d) => d.trim()).filter(Boolean),
       goodToHave: f.goodToHave.split("\n").map((d) => d.trim()).filter(Boolean),
       education: f.education.split("\n").map((d) => d.trim()).filter(Boolean),
+      jobTag: f.jobTag || null,
+      screeningQuestions: f.screeningQuestions,
       active: true, postedAt: Date.now(),
     };
     onCreate(job);
-    trackPH("admin_job_posted", { job_id: job.id, category: job.category });
+    trackPH("admin_job_posted", { job_id: job.id, category: job.category, has_screening: f.screeningQuestions.length > 0 });
     setF(blank);
   };
 
@@ -872,18 +868,38 @@ function AdminPostJob({ onCreate }) {
         <div className="sp-field"><label>Salary unit</label>
           <select value={f.salUnit} onChange={set("salUnit")}><option value="month">Per month</option><option value="annum">Per annum</option></select>
         </div>
+        <div className="sp-field"><label>Job tag (e.g. "ltm" for LTM jobs)</label><input value={f.jobTag} onChange={set("jobTag")} placeholder="Optional, e.g. ltm" /></div>
         <div className="sp-field"><label>Tags (comma separated)</label><input value={f.tags} onChange={set("tags")} placeholder="Walk-in interview, Freshers welcome" /></div>
         <div className="sp-field"><label>Key responsibilities (one bullet per line)</label><textarea rows={4} value={f.desc} onChange={set("desc")} /></div>
         <div className="sp-field"><label>Must-have skills (optional, one per line)</label><textarea rows={3} value={f.mustHave} onChange={set("mustHave")} placeholder={"e.g. 3+ years Python\nExperience with LangChain"} /></div>
         <div className="sp-field"><label>Good to have (optional, one per line)</label><textarea rows={3} value={f.goodToHave} onChange={set("goodToHave")} placeholder={"e.g. Exposure to LangGraph\nPrior startup experience"} /></div>
         <div className="sp-field"><label>Education requirement (optional, one per line)</label><textarea rows={2} value={f.education} onChange={set("education")} placeholder={"e.g. Bachelor's in CS or related field"} /></div>
+
+        <div style={{ marginTop: 24, borderTop: "1px solid var(--line)", paddingTop: 16 }}>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Screening questions (optional, max 5)</label>
+          {f.screeningQuestions.length > 0 && (
+            <div className="sp-screening-list">
+              {f.screeningQuestions.map((q, idx) => (
+                <div key={idx} className="sp-screening-item">
+                  <input type="checkbox" className="sp-screening-checkbox" checked={q.mandatory} onChange={(e) => updateScreeningQuestion(idx, "mandatory", e.target.checked)} title="Mark as mandatory" />
+                  <input type="text" value={q.text} onChange={(e) => updateScreeningQuestion(idx, "text", e.target.value)} placeholder="Question text…" />
+                  <button type="button" className="sp-screening-remove" onClick={() => removeScreeningQuestion(idx)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {f.screeningQuestions.length < 5 && (
+            <button type="button" className="sp-mini-btn" style={{ marginTop: f.screeningQuestions.length > 0 ? 8 : 0 }} onClick={addScreeningQuestion}>+ Add question</button>
+          )}
+        </div>
+
         <button className="sp-submit">Post job</button>
       </form>
     </div>
   );
 }
 
-function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
+function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent, onScreeningQuestionsUpdate }) {
   const [editingId, setEditingId] = useState(null);
   const [ef, setEf] = useState(null);
   const [promotingId, setPromotingId] = useState(null);
@@ -900,6 +916,7 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
       type: job.type, exp: job.exp, salMin: rupeesToSalaryInput(job.salMin, job.salUnit), salMax: rupeesToSalaryInput(job.salMax, job.salUnit), salUnit: job.salUnit,
       tags: job.tags.join(", "), desc: job.desc.join("\n"),
       mustHave: (job.mustHave || []).join("\n"), goodToHave: (job.goodToHave || []).join("\n"), education: (job.education || []).join("\n"),
+      jobTag: job.jobTag || "",
     });
   };
   const cancelEdit = () => { setEditingId(null); setEf(null); };
@@ -916,6 +933,7 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
       mustHave: ef.mustHave.split("\n").map((d) => d.trim()).filter(Boolean),
       goodToHave: ef.goodToHave.split("\n").map((d) => d.trim()).filter(Boolean),
       education: ef.education.split("\n").map((d) => d.trim()).filter(Boolean),
+      jobTag: ef.jobTag || null,
     });
     cancelEdit();
   };
@@ -982,6 +1000,7 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
                     <div className="sp-field"><label>Salary unit</label>
                       <select value={ef.salUnit} onChange={set("salUnit")}><option value="month">Per month</option><option value="annum">Per annum</option></select>
                     </div>
+                    <div className="sp-field"><label>Job tag</label><input value={ef.jobTag} onChange={set("jobTag")} placeholder="e.g. ltm" /></div>
                     <div className="sp-field"><label>Tags (comma separated)</label><input value={ef.tags} onChange={set("tags")} /></div>
                     <div className="sp-field"><label>Key responsibilities (one bullet per line)</label><textarea rows={4} value={ef.desc} onChange={set("desc")} /></div>
                     <div className="sp-field"><label>Must-have skills (optional, one per line)</label><textarea rows={3} value={ef.mustHave} onChange={set("mustHave")} /></div>
@@ -1068,15 +1087,6 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
   );
 }
 
-// Applications tab: read-only view of who applied, where they came from
-// (utm_source), and a job-wise filter. WhatsApp sending was moved to the
-// Manage Jobs tab (promote a specific job posting to past applicants) —
-// it doesn't live here anymore.
-// Groups a list of applications by a UTM field and returns counts sorted
-// descending, each with its % share — used for the Source/Medium/Campaign
-// breakdown panel. Missing values bucket as "direct" (Source only) or
-// "—" (Medium/Campaign), since a blank utm_source specifically means the
-// candidate arrived with no campaign params at all, i.e. direct traffic.
 function utmBreakdown(list, key, emptyLabel) {
   const counts = new Map();
   for (const a of list) {
@@ -1089,8 +1099,6 @@ function utmBreakdown(list, key, emptyLabel) {
     .sort((a, b) => b.count - a.count);
 }
 
-// Score is null until the meta-capi-on-apply webhook has run (or if
-// nothing was scoreable for that application — see relevanceDetail.reason).
 function RelevanceBadge({ score, detail }) {
   if (score === null || score === undefined) {
     const reason = detail?.reason;
@@ -1100,9 +1108,6 @@ function RelevanceBadge({ score, detail }) {
     return <span className="sp-rel-badge none" title="Not yet scored, or nothing in the JD/CV was comparable">{label}</span>;
   }
   const tier = score >= 70 ? "high" : score >= 50 ? "mid" : "low";
-  // Build a short "why" tooltip out of whichever categories the engine
-  // actually had to work with (must_have, good_to_have, education, tags,
-  // or the description_fallback when every JD field was left blank).
   const parts = [];
   for (const key of ["must_have", "good_to_have", "education", "tags"]) {
     const cat = detail?.[key];
@@ -1112,9 +1117,9 @@ function RelevanceBadge({ score, detail }) {
   return <span className={`sp-rel-badge ${tier}`} title={parts.join(" · ") || "Relevance score"}>{score}</span>;
 }
 
-function AdminApplications({ applications, jobs, loading }) {
+function AdminApplications({ applications, jobs, loading, screeningAnswersMap }) {
   const [jobFilter, setJobFilter] = useState("all");
-  const [sortBy, setSortBy] = useState(null); // null = applied-at order (default), or "relevance"
+  const [sortBy, setSortBy] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
   const jobTitle = (id) => jobs.find((j) => j.id === id)?.title || id;
 
@@ -1122,10 +1127,6 @@ function AdminApplications({ applications, jobs, loading }) {
 
   const sorted = useMemo(() => {
     if (sortBy !== "relevance") return filtered;
-    // Unscored (null) applications always sink to the bottom regardless of
-    // direction — an unscored candidate isn't "low relevance," it's just
-    // not measured yet, and burying real low scores under it would defeat
-    // the point of sorting by this column at all.
     return [...filtered].sort((a, b) => {
       if (a.relevanceScore === null && b.relevanceScore === null) return 0;
       if (a.relevanceScore === null) return 1;
@@ -1139,21 +1140,41 @@ function AdminApplications({ applications, jobs, loading }) {
     else setSortDir((d) => (d === "desc" ? "asc" : "desc"));
   };
 
-  // Job-wise counts for the dropdown labels, e.g. "Frontend Engineer (12)"
   const countsByJob = useMemo(() => {
     const m = new Map();
     for (const a of applications) m.set(a.job_id, (m.get(a.job_id) || 0) + 1);
     return m;
   }, [applications]);
 
-  // Recomputes automatically whenever jobFilter changes, since it's
-  // derived from `filtered` — same total view, or narrowed to one job.
   const sourceBreakdown = useMemo(() => utmBreakdown(filtered, "utm_source", "direct"), [filtered]);
 
   const exportCSV = () => {
+    // Build column headers: standard columns + screening question columns
+    const allScreeningQuestions = new Map();
+    for (const appId in screeningAnswersMap) {
+      const answers = screeningAnswersMap[appId] || [];
+      answers.forEach((ans, idx) => {
+        if (!allScreeningQuestions.has(idx)) {
+          allScreeningQuestions.set(idx, `Q${idx + 1}`);
+        }
+      });
+    }
+
+    const headers = ["Name", "Phone", "Email", "Job", "Notice Period", "Current Salary", "CV Link", "Relevance Score", "Sent to Meta", "Source", "Applied At"];
+    for (let i = 0; i < allScreeningQuestions.size; i++) {
+      headers.push(`Q${i + 1}`);
+    }
+
     const rows = [
-      ["Name", "Phone", "Email", "Job", "Notice Period", "Current Salary", "CV Link", "Relevance Score", "Sent to Meta", "Source", "Applied At"],
-      ...sorted.map((a) => [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_url || "—", a.relevanceScore ?? "unscored", a.capiSent ? "yes" : "no", a.utm_source, new Date(a.at).toLocaleString()]),
+      headers,
+      ...sorted.map((a) => {
+        const baseRow = [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_url || "—", a.relevanceScore ?? "unscored", a.capiSent ? "yes" : "no", a.utm_source, new Date(a.at).toLocaleString()];
+        const answers = screeningAnswersMap[a.id] || [];
+        for (let i = 0; i < allScreeningQuestions.size; i++) {
+          baseRow.push(answers[i] || "");
+        }
+        return baseRow;
+      }),
     ];
     const csv = rows.map((r) => r.map((c) => `"${c ?? ""}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -1185,56 +1206,56 @@ function AdminApplications({ applications, jobs, loading }) {
         )}
       </div>
 
-    <div className="sp-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
-        <h3 style={{ marginTop: 0 }}>
-          Applications ({filtered.length}{jobFilter !== "all" ? ` of ${applications.length}` : ""})
-        </h3>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <select value={jobFilter} onChange={(e) => setJobFilter(e.target.value)}>
-            <option value="all">All jobs ({applications.length})</option>
-            {jobs.map((j) => (
-              <option key={j.id} value={j.id}>{j.title} ({countsByJob.get(j.id) || 0})</option>
-            ))}
-          </select>
-          <button className="sp-mini-btn" onClick={exportCSV}>Export CSV</button>
+      <div className="sp-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
+          <h3 style={{ marginTop: 0 }}>
+            Applications ({filtered.length}{jobFilter !== "all" ? ` of ${applications.length}` : ""})
+          </h3>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <select value={jobFilter} onChange={(e) => setJobFilter(e.target.value)}>
+              <option value="all">All jobs ({applications.length})</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>{j.title} ({countsByJob.get(j.id) || 0})</option>
+              ))}
+            </select>
+            <button className="sp-mini-btn" onClick={exportCSV}>Export CSV</button>
+          </div>
         </div>
-      </div>
 
-      {loading ? (
-        <p style={{ color: "var(--slate)" }}>Loading applications…</p>
-      ) : applications.length === 0 ? (
-        <p style={{ color: "var(--slate)" }}>No applications yet — try applying to a job from the candidate view.</p>
-      ) : filtered.length === 0 ? (
-        <p style={{ color: "var(--slate)" }}>No applications for this job yet.</p>
-      ) : (
-        <table className="sp-table">
-          <thead>
-            <tr>
-              <th>Name</th><th>Phone</th><th>Job</th><th>Notice</th><th>Salary</th><th>CV</th>
-              <th className="sp-th-sort" onClick={toggleRelevanceSort}>
-                Relevance{sortBy === "relevance" ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
-              </th>
-              <th>Source</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((a, i) => (
-              <tr key={i}>
-                <td>{a.name}</td>
-                <td>{a.phone}</td>
-                <td>{jobTitle(a.job_id)}</td>
-                <td>{a.notice_period || "—"}</td>
-                <td>{a.current_salary || "—"}</td>
-                <td>{a.cv_url ? <a href={a.cv_url} target="_blank" rel="noopener noreferrer">View CV</a> : "—"}</td>
-                <td><RelevanceBadge score={a.relevanceScore} detail={a.relevanceDetail} /></td>
-                <td>{a.utm_source || "direct"}</td>
+        {loading ? (
+          <p style={{ color: "var(--slate)" }}>Loading applications…</p>
+        ) : applications.length === 0 ? (
+          <p style={{ color: "var(--slate)" }}>No applications yet — try applying to a job from the candidate view.</p>
+        ) : filtered.length === 0 ? (
+          <p style={{ color: "var(--slate)" }}>No applications for this job yet.</p>
+        ) : (
+          <table className="sp-table">
+            <thead>
+              <tr>
+                <th>Name</th><th>Phone</th><th>Job</th><th>Notice</th><th>Salary</th><th>CV</th>
+                <th className="sp-th-sort" onClick={toggleRelevanceSort}>
+                  Relevance{sortBy === "relevance" ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
+                </th>
+                <th>Source</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+            </thead>
+            <tbody>
+              {sorted.map((a, i) => (
+                <tr key={i}>
+                  <td>{a.name}</td>
+                  <td>{a.phone}</td>
+                  <td>{jobTitle(a.job_id)}</td>
+                  <td>{a.notice_period || "—"}</td>
+                  <td>{a.current_salary || "—"}</td>
+                  <td>{a.cv_url ? <a href={a.cv_url} target="_blank" rel="noopener noreferrer">View CV</a> : "—"}</td>
+                  <td><RelevanceBadge score={a.relevanceScore} detail={a.relevanceDetail} /></td>
+                  <td>{a.utm_source || "direct"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
@@ -1254,7 +1275,7 @@ function AdminAnalytics({ jobs, applications, funnel }) {
       </div>
       <div className="sp-card">
         <h3 style={{ marginTop: 0 }}>Funnel (this session)</h3>
-        <p style={{ color: "var(--slate)", fontSize: 13.5 }}>In production, back this with real PostHog Insights (funnel: job_viewed → apply_started → apply_completed, breakdown by category / utm_source) instead of the in-session counts shown here.</p>
+        <p style={{ color: "var(--slate)", fontSize: 13.5 }}>In production, back this with real PostHog Insights instead of the in-session counts shown here.</p>
         <table className="sp-table">
           <thead><tr><th>Step</th><th>Count</th><th>Drop-off from previous</th></tr></thead>
           <tbody>
@@ -1329,7 +1350,7 @@ function AdminCampaign({ jobs }) {
     <div className="sp-card">
       <h3 style={{ marginTop: 0 }}>WhatsApp campaign — upload your own list</h3>
       <p style={{ color: "var(--slate)", fontSize: 13.5 }}>
-        Upload a CSV with a name column and a phone column (any header containing "name" / "phone", "mobile", or "number" is auto-detected). Only upload contacts who've actually agreed to be reached this way — WhatsApp's template system doesn't make cold, unsolicited outreach acceptable, and high complaint rates can get your WhatsApp number restricted.
+        Upload a CSV with a name column and a phone column (any header containing "name" / "phone", "mobile", or "number" is auto-detected). Only upload contacts who've actually agreed to be reached this way.
       </p>
       <div className="sp-field">
         <label>CSV file</label>
@@ -1364,7 +1385,7 @@ function AdminCampaign({ jobs }) {
   );
 }
 
-function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, onWhatsAppSent, onExit, loadingApps }) {
+function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, onWhatsAppSent, onExit, loadingApps, screeningAnswersMap, onScreeningQuestionsUpdate }) {
   const [tab, setTab] = useState("post");
   return (
     <div className="sp-adm-shell">
@@ -1378,8 +1399,8 @@ function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, 
         ))}
       </div>
       {tab === "post" && <AdminPostJob onCreate={onCreate} />}
-      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} onUpdate={onUpdate} onWhatsAppSent={onWhatsAppSent} />}
-      {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} loading={loadingApps} />}
+      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} onUpdate={onUpdate} onWhatsAppSent={onWhatsAppSent} onScreeningQuestionsUpdate={onScreeningQuestionsUpdate} />}
+      {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} loading={loadingApps} screeningAnswersMap={screeningAnswersMap} />}
       {tab === "campaign" && <AdminCampaign jobs={jobs} />}
       {tab === "analytics" && <AdminAnalytics jobs={jobs} applications={applications} funnel={funnel} />}
     </div>
@@ -1390,36 +1411,31 @@ function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, 
    ROOT APP
    ════════════════════════════════════════════════════════════════════════ */
 export default function App() {
-  // Must run before anything else touches the URL (pendingJobId reads the
-  // path just below; openJob()/goHome() further down rewrite it via
-  // pushState). Lazy useState initializers run synchronously during this
-  // first render, in declaration order, so this is guaranteed to capture
-  // whatever UTM params are on the URL right now before they can be lost.
   useState(() => { captureUTM(); return null; });
 
   const [db, setDb] = useState({ jobs: [], applications: [] });
+  const [screeningQuestionsMap, setScreeningQuestionsMap] = useState({});
+  const [screeningAnswersMap, setScreeningAnswersMap] = useState({});
   const [loadingJobs, setLoadingJobs] = useState(true);
-  // Admin is reached only via URL path (e.g. jobpulse.../admin), not a
-  // visible nav button. In production with real routing (react-router),
-  // replace this with an actual /admin route instead of a path sniff.
   const [view, setView] = useState(() =>
     typeof window !== "undefined" && window.location.pathname.replace(/\/$/, "").endsWith("/admin") ? "admin" : "candidate"
   );
   const [adminAuthed, setAdminAuthed] = useState(false);
-  const [page, setPage] = useState("home"); // home | jd | success
+  const [page, setPage] = useState("home");
   const [selJob, setSelJob] = useState(null);
   const [successData, setSuccessData] = useState(null);
   const [funnel, setFunnel] = useState({ job_viewed: 0, apply_started: 0 });
+  const [isLtmView, setIsLtmView] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.location.pathname.includes("/jobs/ltm");
+  });
 
-  // Deep link support: a URL like yoursite.com/job/<id> (used as the CTA
-  // link in WhatsApp promotion messages) should open straight to that
-  // job's detail page once jobs have loaded, without the candidate ever
-  // seeing the homepage first.
   const [pendingJobId] = useState(() => {
     if (typeof window === "undefined") return null;
     const m = window.location.pathname.match(/\/job\/([^/]+)/);
     return m ? decodeURIComponent(m[1]) : null;
   });
+
   useEffect(() => {
     if (pendingJobId && db.jobs.length > 0 && page === "home") {
       const j = db.jobs.find((j) => j.id === pendingJobId);
@@ -1427,14 +1443,6 @@ export default function App() {
     }
   }, [pendingJobId, db.jobs]);
 
-  // Load jobs from Supabase on first mount. Admin sees all jobs (active +
-  // paused) so they can manage everything; candidate view filters to
-  // active-only itself further down via Home's own logic, but we also only
-  // need active ones there — simplest to fetch admin-relevant data once
-  // here since RLS only allows reading active rows with the anon key
-  // anyway (paused jobs won't come back for either view, which is fine
-  // for this POC — see setup-guide.md if you want admins to see paused
-  // jobs too, that needs Supabase Auth).
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase
@@ -1450,9 +1458,6 @@ export default function App() {
     })();
   }, []);
 
-  // Fetch real applications data only once the admin has actually logged
-  // in — via the password-gated edge function, not a direct table read.
-  // See admin-get-applications.ts for why this isn't a simple RLS policy.
   const [loadingApps, setLoadingApps] = useState(false);
   useEffect(() => {
     if (!adminAuthed) return;
@@ -1477,26 +1482,19 @@ export default function App() {
     })();
   }, [adminAuthed]);
 
-  // Bump lightweight local funnel counters alongside PostHog capture calls,
-  // purely so the Admin Analytics tab has something to show in this
-  // sandboxed preview (PostHog itself isn't reachable here).
   const bump = (key) => setFunnel((f) => ({ ...f, [key]: (f[key] || 0) + 1 }));
 
   const goHome = () => {
     setView("candidate"); setPage("home"); setSelJob(null);
     if (typeof window !== "undefined") window.history.pushState({}, "", "/");
+    setIsLtmView(false);
   };
+
   const openJob = (j) => {
     setSelJob(j); setPage("jd"); bump("job_viewed"); window.scrollTo(0, 0);
-    // Keep the address bar in sync with whatever job is open — this is
-    // the URL you'd actually copy into an ad's destination link, same
-    // shape as the WhatsApp CTA link (jobLink() in AdminManageJobs).
     if (typeof window !== "undefined") window.history.pushState({}, "", `/job/${j.id}`);
   };
 
-  // Browser back/forward buttons should stay in sync with the URL above
-  // rather than leaving the app on a stale page while the address bar
-  // has already moved.
   useEffect(() => {
     const onPopState = () => {
       const m = window.location.pathname.match(/\/job\/([^/]+)/);
@@ -1504,7 +1502,13 @@ export default function App() {
         const j = db.jobs.find((j) => j.id === decodeURIComponent(m[1]));
         if (j) { setSelJob(j); setPage("jd"); return; }
       }
-      setPage("home"); setSelJob(null);
+      if (window.location.pathname.includes("/jobs/ltm")) {
+        setIsLtmView(true);
+        setPage("home");
+      } else {
+        setPage("home"); setSelJob(null);
+        setIsLtmView(false);
+      }
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -1513,43 +1517,55 @@ export default function App() {
   const finishApply = async (data) => {
     const utm = getUTM();
     const record = {
+      id: uid(),
       name: data.name, phone: data.phone, email: data.email,
       notice_period: data.noticePeriod, current_salary: data.currentSalary,
       cv_url: data.cvUrl, job_id: data.job.id, at: Date.now(),
       whatsapp_last_sent: null,
       ...utm,
     };
-    // Optimistic local update so the UI (success page, admin table this
-    // session) works instantly regardless of network latency.
     setDb((d) => ({ ...d, applications: [...d.applications, record] }));
     setSuccessData(data);
     setPage("success");
     window.scrollTo(0, 0);
 
-    // Persist to Supabase so it survives refreshes / other sessions. This
-    // insert is also what fires the meta-capi-on-apply Database Webhook —
-    // event_id has to be saved here (it wasn't before) so that function can
-    // dedupe its Lead event against the browser Pixel call above.
-    const { error } = await supabase.from("applications").insert({
+    // Save application to Supabase
+    const { data: appData, error } = await supabase.from("applications").insert({
       job_id: data.job.id,
       name: data.name,
       phone: data.phone,
       email: data.email,
       notice_period: data.noticePeriod,
       current_salary: data.currentSalary,
-      cv_url: data.cvUrl, // real public Supabase Storage URL — see JobDetail's submit()
+      cv_url: data.cvUrl,
       event_id: data.eventId,
       utm_source: utm.utm_source,
       utm_medium: utm.utm_medium,
       utm_campaign: utm.utm_campaign,
       fbclid: utm.fbclid,
-    });
-    if (error) console.error("Failed to save application to Supabase:", error);
+    }).select().single();
+
+    if (error) {
+      console.error("Failed to save application to Supabase:", error);
+      return;
+    }
+
+    // Save screening answers if any
+    if (data.screeningAnswers && Object.keys(data.screeningAnswers).length > 0) {
+      const answersToSave = Object.entries(data.screeningAnswers).map(([qId, answer]) => ({
+        application_id: appData.id,
+        question_id: qId,
+        answer_text: answer,
+      }));
+
+      const { error: ansError } = await supabase.from("screening_answers").insert(answersToSave);
+      if (ansError) {
+        console.error("Failed to save screening answers:", ansError);
+      }
+    }
   };
 
   const createJob = async (job) => {
-    // Optimistic local add with a temporary id, replaced once Supabase
-    // confirms the real row (or removed if the insert fails).
     const tempId = job.id;
     setDb((d) => ({ ...d, jobs: [job, ...d.jobs] }));
 
@@ -1558,7 +1574,23 @@ export default function App() {
       console.error("Failed to save job to Supabase:", error);
       setDb((d) => ({ ...d, jobs: d.jobs.filter((j) => j.id !== tempId) }));
     } else {
-      setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === tempId ? dbRowToJob(data) : j)) }));
+      const newJob = dbRowToJob(data);
+      setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === tempId ? newJob : j)) }));
+
+      // Save screening questions if any
+      if (job.screeningQuestions && job.screeningQuestions.length > 0) {
+        const questionsToSave = job.screeningQuestions.map((q, idx) => ({
+          job_id: data.id,
+          question_text: q.text,
+          is_mandatory: q.mandatory,
+          question_order: idx + 1,
+        }));
+
+        const { error: qError } = await supabase.from("screening_questions").insert(questionsToSave);
+        if (qError) {
+          console.error("Failed to save screening questions:", qError);
+        }
+      }
     }
   };
 
@@ -1569,7 +1601,7 @@ export default function App() {
     const { error } = await supabase.from("jobs").update({ active: !job.active }).eq("id", id);
     if (error) {
       console.error("Failed to update job in Supabase:", error);
-      setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? { ...j, active: job.active } : j)) })); // revert
+      setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? { ...j, active: job.active } : j)) }));
     }
   };
 
@@ -1584,10 +1616,11 @@ export default function App() {
       job_type: merged.type, experience: merged.exp, salary_min: merged.salMin, salary_max: merged.salMax,
       salary_unit: merged.salUnit, tags: merged.tags, description: merged.desc,
       must_have: merged.mustHave, good_to_have: merged.goodToHave, education: merged.education,
+      job_tag: merged.jobTag,
     }).eq("id", id);
     if (error) {
       console.error("Failed to save job edits to Supabase:", error);
-      setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? prevJob : j)) })); // revert
+      setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? prevJob : j)) }));
     }
   };
 
@@ -1603,15 +1636,15 @@ export default function App() {
 
       {view === "candidate" && (
         <>
-          {page === "home" && <Home jobs={db.jobs} applications={db.applications} onJob={openJob} loading={loadingJobs} />}
-          {page === "jd" && selJob && <JobDetail job={selJob} onBack={goHome} onSuccess={finishApply} onStart={() => bump("apply_started")} />}
+          {page === "home" && <Home jobs={db.jobs} applications={db.applications} onJob={openJob} loading={loadingJobs} isLtmView={isLtmView} />}
+          {page === "jd" && selJob && <JobDetail job={selJob} onBack={goHome} onSuccess={finishApply} onStart={() => bump("apply_started")} screeningQuestions={screeningQuestionsMap[selJob.id]} />}
           {page === "success" && successData && <Success data={successData} onHome={goHome} />}
         </>
       )}
 
       {view === "admin" && (
         adminAuthed
-          ? <AdminShell jobs={db.jobs} applications={db.applications} funnel={funnel} onCreate={createJob} onToggle={toggleJob} onUpdate={updateJob} onWhatsAppSent={markWhatsAppSent} onExit={goHome} loadingApps={loadingApps} />
+          ? <AdminShell jobs={db.jobs} applications={db.applications} funnel={funnel} onCreate={createJob} onToggle={toggleJob} onUpdate={updateJob} onWhatsAppSent={markWhatsAppSent} onExit={goHome} loadingApps={loadingApps} screeningAnswersMap={screeningAnswersMap} />
           : <AdminGate onIn={() => setAdminAuthed(true)} />
       )}
 
