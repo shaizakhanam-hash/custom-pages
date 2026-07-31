@@ -985,7 +985,7 @@ function AdminPostJob({ onCreate }) {
   );
 }
 
-function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
+function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent, screeningQuestionsMap }) {
   const [editingId, setEditingId] = useState(null);
   const [ef, setEf] = useState(null);
   const [promotingId, setPromotingId] = useState(null);
@@ -997,16 +997,42 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
 
   const startEdit = (job) => {
     setEditingId(job.id);
+    const existingQuestions = (screeningQuestionsMap?.[job.id] || []).map((q) => ({
+      question_text: q.question_text || "",
+      options: q.options && q.options.length === 4 ? q.options : ["", "", "", ""],
+      correct_option: q.correct_option || "A",
+      is_mandatory: q.is_mandatory || false,
+    }));
     setEf({
       title: job.title, company: job.company, category: job.category, location: job.location,
       type: job.type, exp: job.exp, salMin: rupeesToSalaryInput(job.salMin, job.salUnit), salMax: rupeesToSalaryInput(job.salMax, job.salUnit), salUnit: job.salUnit,
       tags: job.tags.join(", "), desc: job.desc.join("\n"),
       mustHave: (job.mustHave || []).join("\n"), goodToHave: (job.goodToHave || []).join("\n"), education: (job.education || []).join("\n"),
       jobTag: job.jobTag || "",
+      screeningQuestions: existingQuestions,
     });
   };
   const cancelEdit = () => { setEditingId(null); setEf(null); };
   const set = (k) => (e) => setEf({ ...ef, [k]: e.target.value });
+
+  const addScreeningQuestion = () => {
+    setEf({ ...ef, screeningQuestions: [...ef.screeningQuestions, { question_text: "", options: ["", "", "", ""], correct_option: "A", is_mandatory: false }] });
+  };
+  const updateScreeningQuestion = (idx, field, value) => {
+    const updated = [...ef.screeningQuestions];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setEf({ ...ef, screeningQuestions: updated });
+  };
+  const updateScreeningOption = (idx, optIdx, value) => {
+    const updated = [...ef.screeningQuestions];
+    const opts = [...(updated[idx].options || ["", "", "", ""])];
+    opts[optIdx] = value;
+    updated[idx].options = opts;
+    setEf({ ...ef, screeningQuestions: updated });
+  };
+  const removeScreeningQuestion = (idx) => {
+    setEf({ ...ef, screeningQuestions: ef.screeningQuestions.filter((_, i) => i !== idx) });
+  };
 
   const saveEdit = () => {
     if (!ef.title || !ef.company || !ef.location) return;
@@ -1020,6 +1046,7 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
       goodToHave: ef.goodToHave.split("\n").map((d) => d.trim()).filter(Boolean),
       education: ef.education.split("\n").map((d) => d.trim()).filter(Boolean),
       jobTag: ef.jobTag || null,
+      screeningQuestions: ef.screeningQuestions,
     });
     cancelEdit();
   };
@@ -1092,7 +1119,38 @@ function AdminManageJobs({ jobs, onToggle, onUpdate, onWhatsAppSent }) {
                     <div className="sp-field"><label>Must-have skills (optional, one per line)</label><textarea rows={3} value={ef.mustHave} onChange={set("mustHave")} /></div>
                     <div className="sp-field"><label>Good to have (optional, one per line)</label><textarea rows={3} value={ef.goodToHave} onChange={set("goodToHave")} /></div>
                     <div className="sp-field"><label>Education requirement (optional, one per line)</label><textarea rows={2} value={ef.education} onChange={set("education")} /></div>
-                    <div style={{ display: "flex", gap: 8 }}>
+
+                    <div style={{ marginTop: 24, borderTop: "1px solid var(--line)", paddingTop: 16 }}>
+                      <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Screening questions (multiple choice, max 5)</label>
+                      {ef.screeningQuestions.length > 0 && (
+                        <div>
+                          {ef.screeningQuestions.map((q, idx) => (
+                            <div key={idx} style={{ border: "1px solid var(--line)", borderRadius: 9, padding: 14, marginBottom: 12, background: "#F9FAFB" }}>
+                              <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+                                <input type="checkbox" className="sp-screening-checkbox" checked={q.is_mandatory} onChange={(e) => updateScreeningQuestion(idx, "is_mandatory", e.target.checked)} title="Mark as mandatory" />
+                                <label style={{ fontSize: 12, fontWeight: 600, margin: 0 }}>Required</label>
+                                <button type="button" className="sp-screening-remove" onClick={() => removeScreeningQuestion(idx)}>Remove</button>
+                              </div>
+                              <div className="sp-field"><label>Question</label><textarea rows={2} value={q.question_text} onChange={(e) => updateScreeningQuestion(idx, "question_text", e.target.value)} placeholder="e.g. How many years of Apex experience?" style={{ resize: "vertical" }} /></div>
+                              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+                                <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, display: "block" }}>Options (select correct answer)</label>
+                                {["A", "B", "C", "D"].map((letter, optIdx) => (
+                                  <div key={letter} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-start" }}>
+                                    <input type="radio" name={`edit_correct_${editingId}_${idx}`} value={letter} checked={q.correct_option === letter} onChange={() => updateScreeningQuestion(idx, "correct_option", letter)} style={{ marginTop: 4, cursor: "pointer" }} title="Mark as correct answer" />
+                                    <input type="text" value={q.options?.[optIdx] || ""} onChange={(e) => updateScreeningOption(idx, optIdx, e.target.value)} placeholder={`Option ${letter}`} style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13 }} />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {ef.screeningQuestions.length < 5 && (
+                        <button type="button" className="sp-mini-btn" style={{ marginTop: ef.screeningQuestions.length > 0 ? 12 : 0 }} onClick={addScreeningQuestion}>+ Add question</button>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
                       <button className="sp-submit" style={{ width: "auto", padding: "10px 18px", marginTop: 0 }} onClick={saveEdit}>Save changes</button>
                       <button className="sp-mini-btn" onClick={cancelEdit}>Cancel</button>
                     </div>
@@ -1198,7 +1256,7 @@ function RelevanceBadge({ score, detail }) {
   return <span className={`sp-rel-badge ${tier}`} title={parts.join(" · ") || "Relevance score"}>{score}</span>;
 }
 
-function AdminApplications({ applications, jobs, loading, screeningAnswersMap }) {
+function AdminApplications({ applications, jobs, loading, screeningAnswersMap, screeningQuestionsMap }) {
   const [jobFilter, setJobFilter] = useState("all");
   const [sortBy, setSortBy] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
@@ -1230,21 +1288,25 @@ function AdminApplications({ applications, jobs, loading, screeningAnswersMap })
   const sourceBreakdown = useMemo(() => utmBreakdown(filtered, "utm_source", "direct"), [filtered]);
 
   const exportCSV = () => {
-    const allQuestions = new Map();
-    for (const appId in screeningAnswersMap) {
-      const answers = screeningAnswersMap[appId] || [];
-      answers.forEach((ans, idx) => {
-        if (!allQuestions.has(idx)) {
-          allQuestions.set(idx, { text: ans.question_text || `Q${idx + 1}`, order: idx });
-        }
-      });
-    }
-
     const headers = ["Name", "Phone", "Email", "Job", "Notice Period", "Current Salary", "CV Link", "Relevance Score", "Sent to Meta", "Source", "Applied At"];
-    for (let i = 0; i < allQuestions.size; i++) {
-      const q = allQuestions.get(i);
-      headers.push(`${q.text} (Answer)`);
-      headers.push(`${q.text} (Correct)`);
+
+    // Each job has its own distinct set of screening questions (e.g. 21
+    // different LTM roles, each with 5 different questions). Matching
+    // answers to questions by array index breaks the moment two jobs have
+    // different question counts, and mixing them into one export when "All
+    // jobs" is selected would be actively misleading — a "Q1" column would
+    // silently mean a different question per row. So: only emit screening
+    // columns when the export is scoped to a single job, and match each
+    // answer to its question by question_id (not position), sourced from
+    // the job's own screening_questions list so every question shows up
+    // even if a given candidate skipped an optional one.
+    const questionsForJob = jobFilter !== "all"
+      ? (screeningQuestionsMap?.[jobFilter] || []).slice().sort((a, b) => a.question_order - b.question_order)
+      : [];
+
+    for (const q of questionsForJob) {
+      headers.push(`${q.question_text} (Answer)`);
+      headers.push(`${q.question_text} (Correct)`);
     }
 
     const rows = [
@@ -1252,10 +1314,10 @@ function AdminApplications({ applications, jobs, loading, screeningAnswersMap })
       ...sorted.map((a) => {
         const baseRow = [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_url || "—", a.relevanceScore ?? "unscored", a.capiSent ? "yes" : "no", a.utm_source, new Date(a.at).toLocaleString()];
         const answers = screeningAnswersMap[a.id] || [];
-        for (let i = 0; i < allQuestions.size; i++) {
-          const ans = answers[i];
+        for (const q of questionsForJob) {
+          const ans = answers.find((x) => x.question_id === q.id);
           baseRow.push(ans?.selected_option || "—");
-          baseRow.push(ans?.is_correct ? "✓" : "✗");
+          baseRow.push(ans ? (ans.is_correct ? "✓" : "✗") : "—");
         }
         return baseRow;
       }),
@@ -1264,7 +1326,9 @@ function AdminApplications({ applications, jobs, loading, screeningAnswersMap })
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "applications.csv"; a.click();
+    a.href = url;
+    a.download = jobFilter !== "all" ? `applications_${jobTitle(jobFilter).replace(/[^a-z0-9]+/gi, "_")}.csv` : "applications_all_jobs.csv";
+    a.click();
   };
 
   return (
@@ -1305,6 +1369,11 @@ function AdminApplications({ applications, jobs, loading, screeningAnswersMap })
             <button className="sp-mini-btn" onClick={exportCSV}>Export CSV</button>
           </div>
         </div>
+        {jobFilter === "all" && (
+          <p style={{ fontSize: 12.5, color: "var(--slate)", marginTop: 0, marginBottom: 16 }}>
+            Filter to a single job above before exporting to include that job's screening question answers in the CSV — each job has its own questions, so they can't be combined into one export.
+          </p>
+        )}
 
         {loading ? (
           <p style={{ color: "var(--slate)" }}>Loading applications…</p>
@@ -1468,7 +1537,7 @@ function AdminCampaign({ jobs }) {
   );
 }
 
-function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, onWhatsAppSent, onExit, loadingApps, screeningAnswersMap }) {
+function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, onWhatsAppSent, onExit, loadingApps, screeningAnswersMap, screeningQuestionsMap }) {
   const [tab, setTab] = useState("post");
   return (
     <div className="sp-adm-shell">
@@ -1482,8 +1551,8 @@ function AdminShell({ jobs, applications, funnel, onCreate, onToggle, onUpdate, 
         ))}
       </div>
       {tab === "post" && <AdminPostJob onCreate={onCreate} />}
-      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} onUpdate={onUpdate} onWhatsAppSent={onWhatsAppSent} />}
-      {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} loading={loadingApps} screeningAnswersMap={screeningAnswersMap} />}
+      {tab === "manage" && <AdminManageJobs jobs={jobs} onToggle={onToggle} onUpdate={onUpdate} onWhatsAppSent={onWhatsAppSent} screeningQuestionsMap={screeningQuestionsMap} />}
+      {tab === "apps" && <AdminApplications applications={applications} jobs={jobs} loading={loadingApps} screeningAnswersMap={screeningAnswersMap} screeningQuestionsMap={screeningQuestionsMap} />}
       {tab === "campaign" && <AdminCampaign jobs={jobs} />}
       {tab === "analytics" && <AdminAnalytics jobs={jobs} applications={applications} funnel={funnel} />}
     </div>
@@ -1744,6 +1813,42 @@ export default function App() {
     if (error) {
       console.error("Failed to save job edits to Supabase:", error);
       setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === id ? prevJob : j)) }));
+      return;
+    }
+
+    // Screening questions are edited as a full replace-set (simplest way to
+    // handle add/remove/reorder without matching up individual question
+    // ids): delete everything under this job, then insert the current list
+    // fresh. screening_answers already collected from past candidates keep
+    // referencing the old question_id via ON DELETE CASCADE removal, so any
+    // prior answers tied to a removed/edited question are cleared too —
+    // acceptable here since this is a job-level edit, not a per-answer edit.
+    if (updates.screeningQuestions !== undefined) {
+      const { error: delError } = await supabase.from("screening_questions").delete().eq("job_id", id);
+      if (delError) {
+        console.error("Failed to clear old screening questions:", delError);
+        return;
+      }
+
+      const questionsToSave = (updates.screeningQuestions || []).map((q, idx) => ({
+        job_id: id,
+        question_text: q.question_text,
+        options: q.options,
+        correct_option: q.correct_option,
+        is_mandatory: q.is_mandatory,
+        question_order: idx + 1,
+      }));
+
+      if (questionsToSave.length > 0) {
+        const { data: newQuestions, error: qError } = await supabase.from("screening_questions").insert(questionsToSave).select();
+        if (qError) {
+          console.error("Failed to save updated screening questions:", qError);
+          return;
+        }
+        setScreeningQuestionsMap((m) => ({ ...m, [id]: newQuestions }));
+      } else {
+        setScreeningQuestionsMap((m) => ({ ...m, [id]: [] }));
+      }
     }
   };
 
@@ -1767,7 +1872,7 @@ export default function App() {
 
       {view === "admin" && (
         adminAuthed
-          ? <AdminShell jobs={db.jobs} applications={db.applications} funnel={funnel} onCreate={createJob} onToggle={toggleJob} onUpdate={updateJob} onWhatsAppSent={markWhatsAppSent} onExit={goHome} loadingApps={loadingApps} screeningAnswersMap={screeningAnswersMap} />
+          ? <AdminShell jobs={db.jobs} applications={db.applications} funnel={funnel} onCreate={createJob} onToggle={toggleJob} onUpdate={updateJob} onWhatsAppSent={markWhatsAppSent} onExit={goHome} loadingApps={loadingApps} screeningAnswersMap={screeningAnswersMap} screeningQuestionsMap={screeningQuestionsMap} />
           : <AdminGate onIn={() => setAdminAuthed(true)} />
       )}
 
