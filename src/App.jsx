@@ -1677,8 +1677,10 @@ export default function App() {
       if (job.screeningQuestions && job.screeningQuestions.length > 0) {
         const questionsToSave = job.screeningQuestions.map((q, idx) => ({
           job_id: data.id,
-          question_text: q.text,
-          is_mandatory: q.mandatory,
+          question_text: q.question_text,
+          options: q.options,
+          correct_option: q.correct_option,
+          is_mandatory: q.is_mandatory,
           question_order: idx + 1,
         }));
 
