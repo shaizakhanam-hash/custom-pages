@@ -659,7 +659,7 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
 
     const mandatoryQuestions = screeningQuestions?.filter((q) => q.is_mandatory) || [];
     for (const q of mandatoryQuestions) {
-      if (!screening[q.id] || screening[q.id].trim() === "") {
+      if (!screening[q.id]) {
         alert(`Please answer the required screening question: "${q.question_text}"`);
         return;
       }
@@ -786,18 +786,26 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
 
               {screeningQuestions.map((q) => (
                 <div key={q.id} className="sp-field">
-                  <label>
+                  <label style={{ marginBottom: 10 }}>
                     {q.question_text}
                     {q.is_mandatory && <span style={{ color: "var(--danger)" }}> *</span>}
                   </label>
-                  <textarea
-                    value={screening[q.id] || ""}
-                    onChange={setScreeningAnswer(q.id)}
-                    placeholder="Be genuine. Short answers work fine."
-                    rows={2}
-                    required={q.is_mandatory}
-                    style={{ resize: "vertical" }}
-                  />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {["A", "B", "C", "D"].map((letter, idx) => (
+                      <label key={letter} style={{ display: "flex", alignItems: "center", gap: 10, padding: 10, border: "1px solid var(--line)", borderRadius: 8, cursor: "pointer", background: screening[q.id] === letter ? "#F0F8FF" : "#fff", borderColor: screening[q.id] === letter ? "var(--signal)" : "var(--line)" }}>
+                        <input
+                          type="radio"
+                          name={`q_${q.id}`}
+                          value={letter}
+                          checked={screening[q.id] === letter}
+                          onChange={setScreeningAnswer(q.id)}
+                          style={{ cursor: "pointer" }}
+                          required={q.is_mandatory}
+                        />
+                        <span style={{ fontSize: 14, color: "var(--ink)" }}>{letter}) {q.options?.[idx] || ""}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               ))}
             </>
@@ -849,12 +857,20 @@ function AdminPostJob({ onCreate }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   const addScreeningQuestion = () => {
-    setF({ ...f, screeningQuestions: [...f.screeningQuestions, { text: "", mandatory: false }] });
+    setF({ ...f, screeningQuestions: [...f.screeningQuestions, { question_text: "", options: ["", "", "", ""], correct_option: "A", is_mandatory: false }] });
   };
 
   const updateScreeningQuestion = (idx, field, value) => {
     const updated = [...f.screeningQuestions];
     updated[idx] = { ...updated[idx], [field]: value };
+    setF({ ...f, screeningQuestions: updated });
+  };
+
+  const updateScreeningOption = (idx, optIdx, value) => {
+    const updated = [...f.screeningQuestions];
+    const opts = [...(updated[idx].options || ["", "", "", ""])];
+    opts[optIdx] = value;
+    updated[idx].options = opts;
     setF({ ...f, screeningQuestions: updated });
   };
 
@@ -919,20 +935,32 @@ function AdminPostJob({ onCreate }) {
         <div className="sp-field"><label>Education requirement (optional, one per line)</label><textarea rows={2} value={f.education} onChange={set("education")} placeholder={"e.g. Bachelor's in CS or related field"} /></div>
 
         <div style={{ marginTop: 24, borderTop: "1px solid var(--line)", paddingTop: 16 }}>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Screening questions (optional, max 5)</label>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Screening questions (multiple choice, max 5)</label>
           {f.screeningQuestions.length > 0 && (
-            <div className="sp-screening-list">
+            <div>
               {f.screeningQuestions.map((q, idx) => (
-                <div key={idx} className="sp-screening-item">
-                  <input type="checkbox" className="sp-screening-checkbox" checked={q.mandatory} onChange={(e) => updateScreeningQuestion(idx, "mandatory", e.target.checked)} title="Mark as mandatory" />
-                  <input type="text" value={q.text} onChange={(e) => updateScreeningQuestion(idx, "text", e.target.value)} placeholder="Question text…" />
-                  <button type="button" className="sp-screening-remove" onClick={() => removeScreeningQuestion(idx)}>Remove</button>
+                <div key={idx} style={{ border: "1px solid var(--line)", borderRadius: 9, padding: 14, marginBottom: 12, background: "#F9FAFB" }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+                    <input type="checkbox" className="sp-screening-checkbox" checked={q.is_mandatory} onChange={(e) => updateScreeningQuestion(idx, "is_mandatory", e.target.checked)} title="Mark as mandatory" />
+                    <label style={{ fontSize: 12, fontWeight: 600, margin: 0 }}>Required</label>
+                    <button type="button" className="sp-screening-remove" onClick={() => removeScreeningQuestion(idx)}>Remove</button>
+                  </div>
+                  <div className="sp-field"><label>Question</label><textarea rows={2} value={q.question_text} onChange={(e) => updateScreeningQuestion(idx, "question_text", e.target.value)} placeholder="e.g. How many years of Apex experience?" style={{ resize: "vertical" }} /></div>
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, display: "block" }}>Options (select correct answer)</label>
+                    {["A", "B", "C", "D"].map((letter, optIdx) => (
+                      <div key={letter} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-start" }}>
+                        <input type="radio" name={`correct_${idx}`} value={letter} checked={q.correct_option === letter} onChange={() => updateScreeningQuestion(idx, "correct_option", letter)} style={{ marginTop: 4, cursor: "pointer" }} title="Mark as correct answer" />
+                        <input type="text" value={q.options?.[optIdx] || ""} onChange={(e) => updateScreeningOption(idx, optIdx, e.target.value)} placeholder={`Option ${letter}`} style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 13 }} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
           )}
           {f.screeningQuestions.length < 5 && (
-            <button type="button" className="sp-mini-btn" style={{ marginTop: f.screeningQuestions.length > 0 ? 8 : 0 }} onClick={addScreeningQuestion}>+ Add question</button>
+            <button type="button" className="sp-mini-btn" style={{ marginTop: f.screeningQuestions.length > 0 ? 12 : 0 }} onClick={addScreeningQuestion}>+ Add question</button>
           )}
         </div>
 
@@ -1187,19 +1215,21 @@ function AdminApplications({ applications, jobs, loading, screeningAnswersMap })
   const sourceBreakdown = useMemo(() => utmBreakdown(filtered, "utm_source", "direct"), [filtered]);
 
   const exportCSV = () => {
-    const allScreeningQuestions = new Map();
+    const allQuestions = new Map();
     for (const appId in screeningAnswersMap) {
       const answers = screeningAnswersMap[appId] || [];
       answers.forEach((ans, idx) => {
-        if (!allScreeningQuestions.has(idx)) {
-          allScreeningQuestions.set(idx, `Q${idx + 1}`);
+        if (!allQuestions.has(idx)) {
+          allQuestions.set(idx, { text: ans.question_text || `Q${idx + 1}`, order: idx });
         }
       });
     }
 
     const headers = ["Name", "Phone", "Email", "Job", "Notice Period", "Current Salary", "CV Link", "Relevance Score", "Sent to Meta", "Source", "Applied At"];
-    for (let i = 0; i < allScreeningQuestions.size; i++) {
-      headers.push(`Q${i + 1}`);
+    for (let i = 0; i < allQuestions.size; i++) {
+      const q = allQuestions.get(i);
+      headers.push(`${q.text} (Answer)`);
+      headers.push(`${q.text} (Correct)`);
     }
 
     const rows = [
@@ -1207,8 +1237,10 @@ function AdminApplications({ applications, jobs, loading, screeningAnswersMap })
       ...sorted.map((a) => {
         const baseRow = [a.name, a.phone, a.email, jobTitle(a.job_id), a.notice_period, a.current_salary, a.cv_url || "—", a.relevanceScore ?? "unscored", a.capiSent ? "yes" : "no", a.utm_source, new Date(a.at).toLocaleString()];
         const answers = screeningAnswersMap[a.id] || [];
-        for (let i = 0; i < allScreeningQuestions.size; i++) {
-          baseRow.push(answers[i] || "");
+        for (let i = 0; i < allQuestions.size; i++) {
+          const ans = answers[i];
+          baseRow.push(ans?.selected_option || "—");
+          baseRow.push(ans?.is_correct ? "✓" : "✗");
         }
         return baseRow;
       }),
@@ -1612,11 +1644,16 @@ export default function App() {
     }
 
     if (data.screeningAnswers && Object.keys(data.screeningAnswers).length > 0) {
-      const answersToSave = Object.entries(data.screeningAnswers).map(([qId, answer]) => ({
-        application_id: appData.id,
-        question_id: qId,
-        answer_text: answer,
-      }));
+      const answersToSave = Object.entries(data.screeningAnswers).map(([qId, selectedOption]) => {
+        const question = data.screeningQuestions.find((q) => q.id === qId);
+        const isCorrect = question ? selectedOption === question.correct_option : false;
+        return {
+          application_id: appData.id,
+          question_id: qId,
+          selected_option: selectedOption,
+          is_correct: isCorrect,
+        };
+      });
 
       const { error: ansError } = await supabase.from("screening_answers").insert(answersToSave);
       if (ansError) {
