@@ -1638,7 +1638,15 @@ export default function App() {
     setPage("success");
     window.scrollTo(0, 0);
 
-    const { data: appData, error } = await supabase.from("applications").insert({
+    // Note: we deliberately do NOT call .select().single() here. Reading
+    // the row back after insert requires a SELECT RLS policy on
+    // `applications`, and we don't want one — that table holds candidate
+    // PII and should only ever be readable via the admin edge function
+    // (which uses the service role key). Since we already generated the
+    // id client-side (record.id), we use that directly instead of asking
+    // PostgREST to return the inserted row.
+    const { error } = await supabase.from("applications").insert({
+      id: record.id,
       job_id: data.job.id,
       name: data.name,
       phone: data.phone,
@@ -1651,12 +1659,14 @@ export default function App() {
       utm_medium: utm.utm_medium,
       utm_campaign: utm.utm_campaign,
       fbclid: utm.fbclid,
-    }).select().single();
+    });
 
     if (error) {
       console.error("Failed to save application to Supabase:", error);
       return;
     }
+
+    const appData = { id: record.id };
 
     if (data.screeningAnswers && Object.keys(data.screeningAnswers).length > 0) {
       const answersToSave = Object.entries(data.screeningAnswers).map(([qId, selectedOption]) => {
