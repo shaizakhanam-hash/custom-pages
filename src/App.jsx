@@ -200,6 +200,22 @@ input,select,textarea{font-family:inherit;}
 .sp-ltm-about-text{font-size:15.5px;color:#E2E8F0;line-height:1.8;margin:0;font-weight:400;}
 .sp-ltm-about-text strong{color:#fff;}
 
+/* Premium screening questions */
+.sp-screening-q-wrapper{margin-top:28px;margin-bottom:28px;}
+.sp-screening-q-title{font-size:15.5px;font-weight:700;color:var(--ink);margin-bottom:16px;text-align:center;max-width:700px;margin-left:auto;margin-right:auto;line-height:1.5;}
+.sp-screening-q-required{color:var(--danger);font-weight:700;margin-left:4px;}
+.sp-screening-options{display:grid;grid-template-columns:1fr;gap:10px;max-width:700px;margin:0 auto;}
+.sp-screening-option{display:flex;align-items:center;gap:14px;padding:16px 18px;border:2px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;transition:all .2s;position:relative;}
+.sp-screening-option:hover{border-color:var(--signal);background:#F8F9FF;box-shadow:0 4px 12px rgba(37, 99, 235, 0.08);}
+.sp-screening-option input[type="radio"]{width:20px;height:20px;cursor:pointer;accent-color:var(--signal);flex-shrink:0;}
+.sp-screening-option-text{font-size:15px;color:var(--ink);font-weight:500;flex:1;}
+.sp-screening-option-letter{font-family:'IBM Plex Mono';font-weight:700;font-size:13px;color:var(--signal);background:#EFF6FF;padding:6px 10px;border-radius:6px;min-width:36px;text-align:center;}
+.sp-screening-option input[type="radio"]:checked ~ .sp-screening-option-text{color:var(--signal);font-weight:600;}
+.sp-screening-option input[type="radio"]:checked ~ .sp-screening-option-letter{background:var(--signal);color:#fff;}
+.sp-screening-option input[type="radio"]:checked + *{animation:checkPulse .3s ease;}
+@keyframes checkPulse{0%{transform:scale(1);} 50%{transform:scale(1.05);} 100%{transform:scale(1);}}
+.sp-screening-option.selected{border-color:var(--signal);border-width:2px;background:#F8F9FF;box-shadow:0 6px 16px rgba(37, 99, 235, 0.12);}
+
 @media(max-width:760px){.sp-field-row,.sp-kpi-row{grid-template-columns:1fr 1fr;}.sp-hdr{padding:14px 18px;}.sp-hero,.sp-listing,.sp-companies{padding-left:18px;padding-right:18px;}}
 `;
 
@@ -784,25 +800,27 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
                 </div>
               </div>
 
-              {screeningQuestions.map((q) => (
-                <div key={q.id} className="sp-field">
-                  <label style={{ marginBottom: 10 }}>
-                    {q.question_text}
-                    {q.is_mandatory && <span style={{ color: "var(--danger)" }}> *</span>}
-                  </label>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {screeningQuestions.map((q, qIdx) => (
+                <div key={q.id} className="sp-screening-q-wrapper">
+                  <div className="sp-screening-q-title">
+                    {qIdx + 1}. {q.question_text}
+                    {q.is_mandatory && <span className="sp-screening-q-required">*</span>}
+                  </div>
+                  <div className="sp-screening-options">
                     {["A", "B", "C", "D"].map((letter, idx) => (
-                      <label key={letter} style={{ display: "flex", alignItems: "center", gap: 10, padding: 10, border: "1px solid var(--line)", borderRadius: 8, cursor: "pointer", background: screening[q.id] === letter ? "#F0F8FF" : "#fff", borderColor: screening[q.id] === letter ? "var(--signal)" : "var(--line)" }}>
+                      <label key={letter} className={`sp-screening-option ${screening[q.id] === letter ? "selected" : ""}`}>
                         <input
                           type="radio"
                           name={`q_${q.id}`}
                           value={letter}
                           checked={screening[q.id] === letter}
                           onChange={setScreeningAnswer(q.id)}
-                          style={{ cursor: "pointer" }}
                           required={q.is_mandatory}
+                          style={{ display: "none" }}
                         />
-                        <span style={{ fontSize: 14, color: "var(--ink)" }}>{letter}) {q.options?.[idx] || ""}</span>
+                        <input type="radio" style={{ pointerEvents: "none" }} checked={screening[q.id] === letter} readOnly />
+                        <span className="sp-screening-option-text">{q.options?.[idx] || ""}</span>
+                        <span className="sp-screening-option-letter">{letter}</span>
                       </label>
                     ))}
                   </div>
