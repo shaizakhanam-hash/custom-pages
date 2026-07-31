@@ -205,13 +205,11 @@ input,select,textarea{font-family:inherit;}
 .sp-screening-q-title{font-size:15.5px;font-weight:700;color:var(--ink);margin-bottom:16px;text-align:center;max-width:700px;margin-left:auto;margin-right:auto;line-height:1.5;}
 .sp-screening-q-required{color:var(--danger);font-weight:700;margin-left:4px;}
 .sp-screening-options{display:grid;grid-template-columns:1fr;gap:10px;max-width:700px;margin:0 auto;}
-.sp-screening-option{display:flex;align-items:center;gap:14px;padding:16px 18px;border:2px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;transition:all .2s;position:relative;}
+.sp-screening-option{display:flex;align-items:center;gap:12px;padding:14px 16px;border:2px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;transition:all .2s;position:relative;}
 .sp-screening-option:hover{border-color:var(--signal);background:#F8F9FF;box-shadow:0 4px 12px rgba(37, 99, 235, 0.08);}
-.sp-screening-option input[type="radio"]{width:20px;height:20px;cursor:pointer;accent-color:var(--signal);flex-shrink:0;}
-.sp-screening-option-text{font-size:15px;color:var(--ink);font-weight:500;flex:1;}
-.sp-screening-option-letter{font-family:'IBM Plex Mono';font-weight:700;font-size:13px;color:var(--signal);background:#EFF6FF;padding:6px 10px;border-radius:6px;min-width:36px;text-align:center;}
+.sp-screening-option input[type="radio"]{width:18px;height:18px;cursor:pointer;accent-color:var(--signal);flex-shrink:0;}
+.sp-screening-option-text{font-size:14.5px;color:var(--ink);font-weight:500;flex:1;}
 .sp-screening-option input[type="radio"]:checked ~ .sp-screening-option-text{color:var(--signal);font-weight:600;}
-.sp-screening-option input[type="radio"]:checked ~ .sp-screening-option-letter{background:var(--signal);color:#fff;}
 .sp-screening-option input[type="radio"]:checked + *{animation:checkPulse .3s ease;}
 @keyframes checkPulse{0%{transform:scale(1);} 50%{transform:scale(1.05);} 100%{transform:scale(1);}}
 .sp-screening-option.selected{border-color:var(--signal);border-width:2px;background:#F8F9FF;box-shadow:0 6px 16px rgba(37, 99, 235, 0.12);}
@@ -819,8 +817,7 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
                           style={{ display: "none" }}
                         />
                         <input type="radio" style={{ pointerEvents: "none" }} checked={screening[q.id] === letter} readOnly />
-                        <span className="sp-screening-option-text">{q.options?.[idx] || ""}</span>
-                        <span className="sp-screening-option-letter">{letter}</span>
+                        <span className="sp-screening-option-text">{letter}) {q.options?.[idx] || ""}</span>
                       </label>
                     ))}
                   </div>
@@ -1754,7 +1751,7 @@ export default function App() {
         <>
           {page === "home" && <Home jobs={db.jobs} applications={db.applications} onJob={openJob} loading={loadingJobs} isLtmView={isLtmView} />}
           {page === "jd" && selJob && <JobDetail job={selJob} onBack={goHome} onSuccess={finishApply} onStart={() => bump("apply_started")} screeningQuestions={screeningQuestionsMap[selJob.id]} />}
-          {page === "success" && successData && <Success data={successData} onHome={goHome} />}
+          {page === "success" && successData && <Success data={successData} onHome={goHome} isLtmView={isLtmView} />}
         </>
       )}
 
