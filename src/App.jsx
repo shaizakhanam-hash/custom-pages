@@ -214,6 +214,10 @@ input,select,textarea{font-family:inherit;}
 @keyframes checkPulse{0%{transform:scale(1);} 50%{transform:scale(1.05);} 100%{transform:scale(1);}}
 .sp-screening-option.selected{border-color:var(--signal);border-width:2px;background:#F8F9FF;box-shadow:0 6px 16px rgba(37, 99, 235, 0.12);}
 
+/* Shine.com branding badge on the LTM page */
+.sp-shine-badge{text-align:center;padding:24px 20px 40px;font-size:13px;color:var(--slate);}
+.sp-shine-badge span{font-weight:700;color:var(--ink);font-family:'Sora',sans-serif;}
+
 @media(max-width:760px){.sp-field-row,.sp-kpi-row{grid-template-columns:1fr 1fr;}.sp-hdr{padding:14px 18px;}.sp-hero,.sp-listing,.sp-companies{padding-left:18px;padding-right:18px;}}
 `;
 
@@ -571,6 +575,12 @@ function Home({ jobs, applications, onJob, loading, isLtmView }) {
           </div>
         )}
       </section>
+
+      {isLtmView && (
+        <div className="sp-shine-badge">
+          Powered by <span>Shine.com</span>
+        </div>
+      )}
     </>
   );
 }
