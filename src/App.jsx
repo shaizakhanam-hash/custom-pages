@@ -1598,48 +1598,62 @@ export default function App() {
     return m ? decodeURIComponent(m[1]) : null;
   });
 
+  const [loadingJobDetail, setLoadingJobDetail] = useState(false);
+
+  // Fetches the full job row (JD text columns) plus that job's screening
+  // questions, on demand, for the one job a visitor actually opens.
+  const fetchJobDetail = async (jobId) => {
+    const [{ data: jobRow, error: jobErr }, { data: qRows, error: qErr }] = await Promise.all([
+      supabase.from("jobs").select("*").eq("id", jobId).single(),
+      supabase.from("screening_questions").select("*").eq("job_id", jobId).order("question_order", { ascending: true }),
+    ]);
+    if (jobErr) {
+      console.error("Failed to load job detail:", jobErr);
+      return null;
+    }
+    const full = { ...dbRowToJob(jobRow), _full: true };
+    setDb((d) => ({ ...d, jobs: d.jobs.map((x) => (x.id === jobId ? full : x)) }));
+    if (!qErr && qRows) {
+      setScreeningQuestionsMap((m) => ({ ...m, [jobId]: qRows }));
+    }
+    return full;
+  };
+
   useEffect(() => {
     if (pendingJobId && db.jobs.length > 0 && page === "home") {
       const j = db.jobs.find((j) => j.id === pendingJobId);
-      if (j) { setSelJob(j); setPage("jd"); }
+      if (j) {
+        if (j._full) {
+          setSelJob(j); setPage("jd");
+        } else {
+          setLoadingJobDetail(true);
+          fetchJobDetail(j.id).then((full) => {
+            setLoadingJobDetail(false);
+            setSelJob(full || j);
+            setPage("jd");
+          });
+        }
+      }
     }
   }, [pendingJobId, db.jobs]);
 
+  // Listing view only needs the light-weight columns — the long-text JD
+  // fields (description/must_have/good_to_have/education) are pulled lazily
+  // per-job in fetchJobDetail() so every home-page visit doesn't have to
+  // download every job's full JD text (this was the single biggest source
+  // of Supabase egress: a full-table, full-column fetch on every page load).
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase
         .from("jobs")
-        .select("*")
+        .select("id, title, company, category, location, job_type, experience, salary_min, salary_max, salary_unit, tags, job_tag, active, created_at")
         .order("created_at", { ascending: false });
       if (error) {
         console.error("Failed to load jobs from Supabase:", error);
       } else {
-        setDb((d) => ({ ...d, jobs: (data || []).map(dbRowToJob) }));
+        setDb((d) => ({ ...d, jobs: (data || []).map((row) => ({ ...dbRowToJob(row), _full: false })) }));
       }
       setLoadingJobs(false);
-    })();
-  }, []);
-
-  // Load screening questions
-  useEffect(() => {
-    (async () => {
-      const { data, error } = await supabase
-        .from("screening_questions")
-        .select("*")
-        .order("question_order", { ascending: true });
-
-      if (error) {
-        console.error("Failed to load screening questions:", error);
-      } else if (data) {
-        const grouped = {};
-        for (const q of data) {
-          if (!grouped[q.job_id]) {
-            grouped[q.job_id] = [];
-          }
-          grouped[q.job_id].push(q);
-        }
-        setScreeningQuestionsMap(grouped);
-      }
     })();
   }, []);
 
@@ -1668,6 +1682,34 @@ export default function App() {
     })();
   }, [adminAuthed]);
 
+  // Admin screens (manage jobs, applications filter) need every job's full
+  // JD text + every job's screening questions, so hydrate them fully once,
+  // on admin login only — this is rare compared to candidate traffic.
+  useEffect(() => {
+    if (!adminAuthed) return;
+    (async () => {
+      const [{ data: jobRows, error: jobErr }, { data: qRows, error: qErr }] = await Promise.all([
+        supabase.from("jobs").select("*").order("created_at", { ascending: false }),
+        supabase.from("screening_questions").select("*").order("question_order", { ascending: true }),
+      ]);
+      if (jobErr) {
+        console.error("Failed to load jobs for admin:", jobErr);
+      } else {
+        setDb((d) => ({ ...d, jobs: (jobRows || []).map((row) => ({ ...dbRowToJob(row), _full: true })) }));
+      }
+      if (qErr) {
+        console.error("Failed to load screening questions for admin:", qErr);
+      } else if (qRows) {
+        const grouped = {};
+        for (const q of qRows) {
+          if (!grouped[q.job_id]) grouped[q.job_id] = [];
+          grouped[q.job_id].push(q);
+        }
+        setScreeningQuestionsMap(grouped);
+      }
+    })();
+  }, [adminAuthed]);
+
   const bump = (key) => setFunnel((f) => ({ ...f, [key]: (f[key] || 0) + 1 }));
 
   const goHome = () => {
@@ -1678,9 +1720,17 @@ export default function App() {
     }
   };
 
-  const openJob = (j) => {
-    setSelJob(j); setPage("jd"); bump("job_viewed"); window.scrollTo(0, 0);
+  const openJob = async (j) => {
+    bump("job_viewed"); window.scrollTo(0, 0);
     if (typeof window !== "undefined") window.history.pushState({}, "", `/job/${j.id}`);
+    if (j._full) {
+      setSelJob(j); setPage("jd");
+      return;
+    }
+    setLoadingJobDetail(true);
+    const full = await fetchJobDetail(j.id);
+    setLoadingJobDetail(false);
+    setSelJob(full || j); setPage("jd");
   };
 
   useEffect(() => {
@@ -1688,7 +1738,19 @@ export default function App() {
       const m = window.location.pathname.match(/\/job\/([^/]+)/);
       if (m) {
         const j = db.jobs.find((j) => j.id === decodeURIComponent(m[1]));
-        if (j) { setSelJob(j); setPage("jd"); return; }
+        if (j) {
+          if (j._full) {
+            setSelJob(j); setPage("jd");
+          } else {
+            setLoadingJobDetail(true);
+            fetchJobDetail(j.id).then((full) => {
+              setLoadingJobDetail(false);
+              setSelJob(full || j);
+              setPage("jd");
+            });
+          }
+          return;
+        }
       }
       if (window.location.pathname.includes("/jobs/ltm")) {
         setIsLtmView(true);
@@ -1775,7 +1837,7 @@ export default function App() {
       console.error("Failed to save job to Supabase:", error);
       setDb((d) => ({ ...d, jobs: d.jobs.filter((j) => j.id !== tempId) }));
     } else {
-      const newJob = dbRowToJob(data);
+      const newJob = { ...dbRowToJob(data), _full: true };
       setDb((d) => ({ ...d, jobs: d.jobs.map((j) => (j.id === tempId ? newJob : j)) }));
 
       if (job.screeningQuestions && job.screeningQuestions.length > 0) {
@@ -1875,7 +1937,8 @@ export default function App() {
       {view === "candidate" && (
         <>
           {page === "home" && <Home jobs={db.jobs} applications={db.applications} onJob={openJob} loading={loadingJobs} isLtmView={isLtmView} />}
-          {page === "jd" && selJob && <JobDetail job={selJob} onBack={goHome} onSuccess={finishApply} onStart={() => bump("apply_started")} screeningQuestions={screeningQuestionsMap[selJob.id]} />}
+          {page === "jd" && loadingJobDetail && <div className="sp-empty">Loading job details…</div>}
+          {page === "jd" && !loadingJobDetail && selJob && <JobDetail job={selJob} onBack={goHome} onSuccess={finishApply} onStart={() => bump("apply_started")} screeningQuestions={screeningQuestionsMap[selJob.id]} />}
           {page === "success" && successData && <Success data={successData} onHome={goHome} isLtmView={isLtmView} />}
         </>
       )}
