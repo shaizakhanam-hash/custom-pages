@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabaseClient";
+import { upload as blobUpload } from "@vercel/blob/client";
 import Papa from "papaparse";
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -693,16 +694,22 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
     setSubmitting(true);
     const eventId = uid();
 
-    const ext = f.cvFile.name.split(".").pop();
-    const path = `${uid()}.${ext}`;
-    const { error: cvErr } = await supabase.storage.from("resumes").upload(path, f.cvFile);
-    if (cvErr) {
+    const ext = (f.cvFile.name.split(".").pop() || "pdf").toLowerCase();
+    const CV_MIME = { pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+    let cvUrl;
+    try {
+      const blob = await blobUpload(`resumes/${uid()}.${ext}`, f.cvFile, {
+        access: "public",
+        handleUploadUrl: "/api/cv-upload",
+        contentType: CV_MIME[ext] || f.cvFile.type || "application/pdf",
+      });
+      cvUrl = blob.url;
+    } catch (cvErr) {
       console.error("CV upload failed:", cvErr);
       setCvError("We couldn't upload your CV — please check the file and try again.");
       setSubmitting(false);
       return;
     }
-    const cvUrl = supabase.storage.from("resumes").getPublicUrl(path).data.publicUrl;
 
     trackPH("apply_completed", { job_id: job.id, job_title: job.title, company: job.company, category: job.category, name: f.name, email: f.email, notice_period: f.noticePeriod });
     trackMeta("Lead", { content_name: job.title, content_category: job.category, value: 0, currency: "INR" }, eventId);
@@ -714,6 +721,8 @@ function JobDetail({ job, onBack, onSuccess, onStart, screeningQuestions }) {
       noticePeriod: f.noticePeriod,
       currentSalary: f.currentSalary,
       cvUrl,
+      cvFileName: f.cvFile.name,
+      cvSize: f.cvFile.size,
       job,
       eventId,
       screeningAnswers: screening,
@@ -1603,18 +1612,19 @@ export default function App() {
   // Fetches the full job row (JD text columns) plus that job's screening
   // questions, on demand, for the one job a visitor actually opens.
   const fetchJobDetail = async (jobId) => {
-    const [{ data: jobRow, error: jobErr }, { data: qRows, error: qErr }] = await Promise.all([
-      supabase.from("jobs").select("*").eq("id", jobId).single(),
-      supabase.from("screening_questions").select("*").eq("job_id", jobId).order("question_order", { ascending: true }),
-    ]);
-    if (jobErr) {
+    let detail;
+    try {
+      const r = await fetch(`/api/job?id=${encodeURIComponent(jobId)}`);
+      if (!r.ok) throw new Error(`status ${r.status}`);
+      detail = await r.json();
+    } catch (jobErr) {
       console.error("Failed to load job detail:", jobErr);
       return null;
     }
-    const full = { ...dbRowToJob(jobRow), _full: true };
+    const full = { ...dbRowToJob(detail.job), _full: true };
     setDb((d) => ({ ...d, jobs: d.jobs.map((x) => (x.id === jobId ? full : x)) }));
-    if (!qErr && qRows) {
-      setScreeningQuestionsMap((m) => ({ ...m, [jobId]: qRows }));
+    if (detail.questions) {
+      setScreeningQuestionsMap((m) => ({ ...m, [jobId]: detail.questions }));
     }
     return full;
   };
@@ -1644,12 +1654,14 @@ export default function App() {
   // of Supabase egress: a full-table, full-column fetch on every page load).
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabase
-        .from("jobs")
-        .select("id, title, company, category, location, job_type, experience, salary_min, salary_max, salary_unit, tags, job_tag, active, created_at")
-        .order("created_at", { ascending: false });
+      let data = null, error = null;
+      try {
+        const r = await fetch("/api/jobs");
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        data = await r.json();
+      } catch (e) { error = e; }
       if (error) {
-        console.error("Failed to load jobs from Supabase:", error);
+        console.error("Failed to load jobs:", error);
       } else {
         setDb((d) => ({ ...d, jobs: (data || []).map((row) => ({ ...dbRowToJob(row), _full: false })) }));
       }
@@ -1786,45 +1798,31 @@ export default function App() {
     // (which uses the service role key). Since we already generated the
     // id client-side (record.id), we use that directly instead of asking
     // PostgREST to return the inserted row.
-    const { error } = await supabase.from("applications").insert({
-      id: record.id,
-      job_id: data.job.id,
-      name: data.name,
-      phone: data.phone,
-      email: data.email,
-      notice_period: data.noticePeriod,
-      current_salary: data.currentSalary,
-      cv_url: data.cvUrl,
-      event_id: data.eventId,
-      utm_source: utm.utm_source,
-      utm_medium: utm.utm_medium,
-      utm_campaign: utm.utm_campaign,
-      fbclid: utm.fbclid,
-    });
-
-    if (error) {
-      console.error("Failed to save application to Supabase:", error);
-      return;
-    }
-
-    const appData = { id: record.id };
-
-    if (data.screeningAnswers && Object.keys(data.screeningAnswers).length > 0) {
-      const answersToSave = Object.entries(data.screeningAnswers).map(([qId, selectedOption]) => {
-        const question = data.screeningQuestions.find((q) => q.id === qId);
-        const isCorrect = question ? selectedOption === question.correct_option : false;
-        return {
-          application_id: appData.id,
-          question_id: qId,
-          selected_option: selectedOption,
-          is_correct: isCorrect,
-        };
+    try {
+      const r = await fetch("/api/apply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          job_id: data.job.id,
+          name: data.name,
+          phone: data.phone,
+          email: data.email,
+          notice_period: data.noticePeriod,
+          current_salary: data.currentSalary,
+          cv_url: data.cvUrl,
+          cv_file_name: data.cvFileName,
+          cv_size: data.cvSize,
+          event_id: data.eventId,
+          utm_source: utm.utm_source,
+          utm_medium: utm.utm_medium,
+          utm_campaign: utm.utm_campaign,
+          fbclid: utm.fbclid,
+          answers: data.screeningAnswers || {},
+        }),
       });
-
-      const { error: ansError } = await supabase.from("screening_answers").insert(answersToSave);
-      if (ansError) {
-        console.error("Failed to save screening answers:", ansError);
-      }
+      if (!r.ok) console.error("Failed to save application:", r.status, await r.text());
+    } catch (error) {
+      console.error("Failed to save application:", error);
     }
   };
 
